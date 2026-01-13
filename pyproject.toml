@@ -5,7 +5,7 @@ requires = [ "hatchling" ]
 [project]
 name = "any2txt"
 version = "0.1.0"
-description = "Transcribe video audio into SRT subtitles with local speech recognition."
+description = "Transcribe video or audio files into SRT subtitles with local speech recognition."
 readme = "README.md"
 keywords = [ "asr", "subtitles", "transcribe" ]
 license = { text = "MIT" }

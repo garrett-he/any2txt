@@ -19,6 +19,7 @@ src/any2txt/
 ├── formats/            # output renderers (currently SRT only)
 │   └── srt.py
 ├── media/              # input handling, one module per media type
+│   ├── audio.py        # extension-based validation only
 │   └── video.py        # extension-based validation only
 └── text/               # post-processing (han.py: script conversion)
 ```
@@ -26,7 +27,10 @@ src/any2txt/
 Design rules:
 
 - `cli.py` must stay thin: parse args, call into subpackages, write output.
-- Media modules validate/extract; they never format output.
+- Media modules validate/extract; they never format output. New media
+  types register their extension predicate in `media/__init__.py`
+  (`is_supported`); the conversion pipeline is media-type agnostic and
+  must stay that way.
 - Format modules consume `Iterable[Segment]` (or plain text) and return
   strings; they never touch the filesystem.
 - The decoding of video/audio happens inside the ASR backend (PyAV via

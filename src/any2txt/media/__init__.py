@@ -1,1 +1,22 @@
-"""Input media handling, one module per media type."""
+"""Input media handling, one module per media type.
+
+Adding a new media type means adding a module here with its extension
+set and a predicate, then including it in :func:`is_supported` below.
+The conversion pipeline in cli.py is media-type agnostic and must stay
+that way; new types are only scanned and validated here.
+"""
+
+from pathlib import Path
+
+from any2txt.media.audio import is_audio
+from any2txt.media.video import is_video
+
+__all__ = ['is_supported']
+
+
+def is_supported(path: Path) -> bool:
+    """Return True if any registered media type claims the path's extension.
+
+    New media types (pdf, image, ...) plug in here.
+    """
+    return is_video(path) or is_audio(path)

@@ -3,8 +3,8 @@
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/garrett-he/any2txt/blob/main/LICENSE)
 [![ci](https://github.com/garrett-he/any2txt/actions/workflows/ci.yml/badge.svg)](https://github.com/garrett-he/any2txt/actions/workflows/ci.yml)
 
-Transcribe the audio track of a video file into SRT subtitles with local
-speech recognition (faster-whisper). No API key, no ffmpeg required.
+Transcribe video or audio files into SRT subtitles with local speech
+recognition (faster-whisper). No API key, no ffmpeg required.
 
 ## Install
 
@@ -26,6 +26,9 @@ pip install any2txt
 # Write video.srt next to the source file
 any2txt video.mp4
 
+# Audio works the same way
+any2txt song.mp3
+
 # Explicit output path (must end with .srt)
 any2txt video.mp4 output.srt
 
@@ -38,26 +41,28 @@ any2txt video.mp4 --model small --language zh
 # Custom line width and lines per cue
 any2txt video.mp4 --line-width 42 --max-lines 2
 
-# Convert every video in a directory; each .srt lands next to its video
+# Convert every media file in a directory; each .srt lands next to its source
 any2txt videos/
 
 # Convert into an output directory (created if missing), skipping
-# videos whose .srt already exists
+# files whose .srt already exists
 any2txt videos/ output/
 
 # Include subdirectories (mirrored under the output directory) and
-# re-convert videos whose output already exists
+# re-convert files whose output already exists
 any2txt videos/ output/ --recursive --force
 ```
 
 ### Directory mode
 
-When SRC is a directory, every video found is converted to
-`{name}.srt`. Without DST each `.srt` is written next to its video;
-with DST it is written into that directory (mirroring subdirectories
-with `--recursive`). Existing outputs are skipped unless `--force` is
-given. One failing video does not stop the batch: failures are
-summarized at the end and the exit code is 1.
+When SRC is a directory, every video or audio file found is converted
+to `{name}.srt`. Without DST each `.srt` is written next to its source
+file; with DST it is written into that directory (mirroring
+subdirectories with `--recursive`). Existing outputs are skipped unless
+`--force` is given. One failing file does not stop the batch: failures
+are summarized at the end and the exit code is 1. Files sharing the
+same name but different extensions (e.g. `song.mp3` and `song.mp4`)
+conflict on the same output path and are reported as an error.
 
 ### Options
 
@@ -68,8 +73,8 @@ summarized at the end and the exit code is 1.
 | `--max-lines`       | `2`         | Max lines per cue; longer segments split into multiple timed cues  |
 | `--model`           | `base`      | Whisper model size (`tiny`, `base`, `small`, `medium`, ...)        |
 | `--language`        | auto-detect | ISO language code of the audio (e.g. `zh`)                         |
-| `-r`, `--recursive` | off         | Also process videos in subdirectories (directory mode)             |
-| `-f`, `--force`     | off         | Re-convert videos whose output .srt already exists (directory mode) |
+| `-r`, `--recursive` | off         | Also process files in subdirectories (directory mode)              |
+| `-f`, `--force`     | off         | Re-convert files whose output .srt already exists (directory mode)  |
 | `--version`         |             | Print the version and exit                                         |
 
 ## Notes
@@ -77,7 +82,8 @@ summarized at the end and the exit code is 1.
 - The first run of each model size downloads the model weights
   (the default `base` model is about 150 MB); later runs load from cache.
 - Inference runs on CPU with int8 quantization by default.
-- Silent stretches are filtered with VAD to avoid hallucinated text.
+- Silent stretches are filtered with VAD to avoid hallucinated text;
+  media without speech (e.g. music) produces an empty `.srt`.
 
 ## Development
 

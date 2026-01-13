@@ -9,7 +9,7 @@ import typer
 from any2txt import __version__
 from any2txt.asr.faster_whisper import transcribe
 from any2txt.formats.srt import DEFAULT_LINE_WIDTH, DEFAULT_MAX_LINES, format_srt
-from any2txt.media.video import is_video
+from any2txt.media import is_supported
 from any2txt.text import HanVariant, convert_han
 
 app = typer.Typer()
@@ -33,25 +33,36 @@ class _Options:
     language: str | None
 
 
-def _render_srt(video: Path, options: _Options) -> str:
-    """Transcribe one video and return its rendered SRT text."""
+def _render_srt(source: Path, options: _Options) -> str:
+    """Transcribe one media file and return its rendered SRT text."""
     text = format_srt(
-        transcribe(video, model_size=options.model, language=options.language),
+        transcribe(source, model_size=options.model, language=options.language),
         line_width=options.line_width,
         max_lines=options.max_lines,
     )
-    return convert_han(text, options.han)
+    text = convert_han(text, options.han)
+    if not text:
+        typer.echo('no speech detected')
+    return text
 
 
-def _convert_one(video: Path, output: Path, options: _Options) -> None:
-    """Transcribe one video and write its SRT file."""
-    output.write_text(_render_srt(video, options), encoding='utf-8')
+def _convert_one(source: Path, output: Path, options: _Options) -> None:
+    """Transcribe one media file and write its SRT file."""
+    output.write_text(_render_srt(source, options), encoding='utf-8')
 
 
-def _collect_videos(src: Path, recursive: bool) -> list[Path]:
-    """Return the videos directly under src, or under it recursively."""
+def _collect_media(src: Path, recursive: bool) -> list[Path]:
+    """Return the supported media files directly under src, or recursively."""
     candidates = src.rglob('*') if recursive else src.iterdir()
-    return sorted(path for path in candidates if path.is_file() and is_video(path))
+    return sorted(path for path in candidates if path.is_file() and is_supported(path))
+
+
+def _output_path(video: Path, src: Path, dst: Path | None, recursive: bool) -> Path:
+    """Return the SRT output path for one media file in directory mode."""
+    if dst is None:
+        return video.with_suffix('.srt')
+    relative = video.relative_to(src) if recursive else Path(video.name)
+    return dst / relative.with_suffix('.srt')
 
 
 def _convert_directory(
@@ -61,50 +72,58 @@ def _convert_directory(
     recursive: bool,
     force: bool,
 ) -> int:
-    """Convert every video under src; return the process exit code."""
+    """Convert every media file under src; return the process exit code."""
     if dst is not None and dst.exists() and not dst.is_dir():
         typer.echo(f'Error: output path {dst} is not a directory', err=True)
         return 1
-    videos = _collect_videos(src, recursive)
-    if not videos:
-        typer.echo('no video files found')
+    media_files = _collect_media(src, recursive)
+    if not media_files:
+        typer.echo('no media files found')
         return 0
+    jobs = [(media, _output_path(media, src, dst, recursive)) for media in media_files]
+    outputs_seen: dict[Path, Path] = {}
+    conflicts: list[tuple[Path, Path]] = []
+    for media, output in jobs:
+        if output in outputs_seen:
+            conflicts.append((outputs_seen[output], media))
+        else:
+            outputs_seen[output] = media
+    if conflicts:
+        typer.echo('Error: conflicting output files:', err=True)
+        for first, second in conflicts:
+            typer.echo(f'  {first} and {second} both write {second.with_suffix(".srt")}', err=True)
+        return 1
     typer.echo('Loading model (first use of a model size downloads it)...')
-    total = len(videos)
+    total = len(jobs)
     converted = skipped = 0
     failures: list[tuple[Path, str]] = []
-    for position, video in enumerate(videos, start=1):
-        if dst is None:
-            output = video.with_suffix('.srt')
-        else:
-            relative = video.relative_to(src) if recursive else Path(video.name)
-            output = dst / relative.with_suffix('.srt')
-        typer.echo(f'Processing {position}/{total}: {video}')
+    for position, (media, output) in enumerate(jobs, start=1):
+        typer.echo(f'Processing {position}/{total}: {media}')
         if output.exists() and not force:
             typer.echo(f'Skipping {output} (already exists)')
             skipped += 1
             continue
         try:
             output.parent.mkdir(parents=True, exist_ok=True)
-            _convert_one(video, output, options)
+            _convert_one(media, output, options)
         except Exception as exc:
             output.unlink(missing_ok=True)
-            failures.append((video, str(exc)))
-            typer.echo(f'Failed: {video}: {exc}', err=True)
+            failures.append((media, str(exc)))
+            typer.echo(f'Failed: {media}: {exc}', err=True)
         else:
             converted += 1
     typer.echo(f'Done: {converted} converted, {skipped} skipped, {len(failures)} failed')
     if failures:
         typer.echo('Failed files:', err=True)
-        for video, message in failures:
-            typer.echo(f'  {video}: {message}', err=True)
+        for media, message in failures:
+            typer.echo(f'  {media}: {message}', err=True)
         return 1
     return 0
 
 
 @app.command()
 def main(
-    src: Annotated[Path, typer.Argument(help='Path to a video file, or a directory of videos.')],
+    src: Annotated[Path, typer.Argument(help='Path to a media file, or a directory of media files.')],
     dst: Annotated[
         Path | None,
         typer.Argument(help='Output .srt path (file mode) or output directory (directory mode).'),
@@ -163,11 +182,12 @@ def main(
         typer.Option('--version', callback=_version_callback, is_eager=True),
     ] = False,
 ) -> None:
-    """Transcribe video audio into SRT subtitles.
+    """Transcribe the audio of a video or audio file into SRT subtitles.
 
-    SRC may be a video file or a directory of videos. With a directory,
-    every video is converted to ``{name}.srt`` next to it, or into DST
-    when given; ``--force`` re-converts videos whose output exists.
+    SRC may be a media file or a directory of media files. With a
+    directory, every file is converted to ``{name}.srt`` next to it, or
+    into DST when given; ``--force`` re-converts files whose output
+    exists.
     """
     options = _Options(
         han=han,
@@ -181,8 +201,8 @@ def main(
     if not src.is_file():
         typer.echo(f'Error: source not found: {src}', err=True)
         raise typer.Exit(1)
-    if not is_video(src):
-        typer.echo(f'Error: not a supported video file: {src}', err=True)
+    if not is_supported(src):
+        typer.echo(f'Error: not a supported video or audio file: {src}', err=True)
         raise typer.Exit(1)
     if dst is not None and dst.suffix.lower() != '.srt':
         typer.echo(f'Error: unsupported output extension {dst.suffix!r}; use .srt', err=True)

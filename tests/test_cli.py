@@ -38,6 +38,11 @@ def fake_transcribe_selective(audio: Path, **_kwargs: object) -> Iterator[Segmen
     return iter(SEGMENTS)
 
 
+def fake_transcribe_silent(_audio: Path, **_kwargs: object) -> Iterator[Segment]:
+    """Return no segments at all (no speech detected)."""
+    return iter([])
+
+
 def make_video(path: Path) -> Path:
     """Create a fake video file."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,13 +79,33 @@ def test_cli_source_not_found(tmp_path: Path) -> None:
     assert 'not found' in result.output
 
 
-def test_cli_rejects_non_video(tmp_path: Path) -> None:
-    """A non-video extension fails with exit code 1."""
+def test_cli_rejects_unsupported_media(tmp_path: Path) -> None:
+    """An unsupported extension fails with exit code 1."""
     src = tmp_path / 'notes.txt'
-    src.write_text('not a video')
+    src.write_text('not a media file')
     result = runner.invoke(app, [str(src)])
     assert result.exit_code == 1
-    assert 'not a supported video' in result.output
+    assert 'not a supported video or audio file' in result.output
+
+
+def test_cli_accepts_audio_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An audio file goes through the same pipeline and yields the same SRT."""
+    src = make_video(tmp_path / 'song.mp3')
+    monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    dst = src.with_suffix('.srt')
+    assert dst.read_text(encoding='utf-8') == SRT_EXPECTED
+
+
+def test_cli_empty_result_writes_empty_srt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero segments produce an empty .srt plus a 'no speech detected' hint."""
+    src = make_video(tmp_path / 'silence.mp4')
+    monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe_silent)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert 'no speech detected' in result.output
+    assert src.with_suffix('.srt').read_text(encoding='utf-8') == ''
 
 
 def test_cli_accepts_uppercase_extension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -183,56 +208,60 @@ def test_cli_han_rejects_invalid_value(fake_video: Path) -> None:
     assert result.exit_code != 0
 
 
-def _make_video_dir(tmp_path: Path) -> Path:
-    """Create a source directory with top-level and nested videos."""
+def _make_media_dir(tmp_path: Path) -> Path:
+    """Create a source directory with top-level and nested media files."""
     src = tmp_path / 'videos'
     make_video(src / 'a.mp4')
     make_video(src / 'b.mkv')
+    make_video(src / 'song.mp3')
     make_video(src / 'sub' / 'c.mp4')
-    (src / 'notes.txt').write_text('not a video')
+    (src / 'notes.txt').write_text('not a media file')
     return src
 
 
-def test_cli_directory_default_dst_next_to_videos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Directory mode without DST writes each .srt next to its video."""
-    src = _make_video_dir(tmp_path)
+def test_cli_directory_default_dst_next_to_media(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Directory mode without DST writes each .srt next to its media file."""
+    src = _make_media_dir(tmp_path)
     monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
     result = runner.invoke(app, [str(src)])
     assert result.exit_code == 0
     assert (src / 'a.srt').read_text(encoding='utf-8') == SRT_EXPECTED
     assert (src / 'b.srt').is_file()
-    assert not (src / 'c.srt').exists()
+    assert (src / 'song.srt').is_file()
+    assert not (src / 'sub' / 'c.srt').exists()
     assert not (src / 'notes.srt').exists()
 
 
 def test_cli_directory_dst_flat_without_recursive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Without -r only top-level videos are converted into the DST directory."""
-    src = _make_video_dir(tmp_path)
+    """Without -r only top-level media files are converted into DST."""
+    src = _make_media_dir(tmp_path)
     dst = tmp_path / 'out'
     monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
     result = runner.invoke(app, [str(src), str(dst)])
     assert result.exit_code == 0
     assert (dst / 'a.srt').read_text(encoding='utf-8') == SRT_EXPECTED
     assert (dst / 'b.srt').is_file()
+    assert (dst / 'song.srt').is_file()
     assert not (dst / 'c.srt').exists()
     assert not (src / 'a.srt').exists()
 
 
 def test_cli_directory_recursive_mirrors_structure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """-r mirrors the source structure under DST, including nested videos."""
-    src = _make_video_dir(tmp_path)
+    """-r mirrors the source structure under DST, including nested media."""
+    src = _make_media_dir(tmp_path)
     dst = tmp_path / 'out'
     monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
     result = runner.invoke(app, [str(src), str(dst), '--recursive'])
     assert result.exit_code == 0
     assert (dst / 'a.srt').read_text(encoding='utf-8') == SRT_EXPECTED
     assert (dst / 'b.srt').is_file()
+    assert (dst / 'song.srt').is_file()
     assert (dst / 'sub' / 'c.srt').is_file()
 
 
 def test_cli_directory_recursive_without_dst_keeps_location(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """-r without DST writes nested videos' .srt in their own directory."""
-    src = _make_video_dir(tmp_path)
+    """-r without DST writes nested media's .srt in their own directory."""
+    src = _make_media_dir(tmp_path)
     monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
     result = runner.invoke(app, [str(src), '--recursive'])
     assert result.exit_code == 0
@@ -241,7 +270,7 @@ def test_cli_directory_recursive_without_dst_keeps_location(tmp_path: Path, monk
 
 def test_cli_directory_skips_existing_unless_forced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Existing outputs are skipped by default and overwritten with --force."""
-    src = _make_video_dir(tmp_path)
+    src = _make_media_dir(tmp_path)
     existing = src / 'a.srt'
     existing.write_text('old content')
     monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
@@ -256,7 +285,7 @@ def test_cli_directory_skips_existing_unless_forced(tmp_path: Path, monkeypatch:
 
 
 def test_cli_directory_failure_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A failing video does not stop the batch and is reported at the end."""
+    """A failing media file does not stop the batch and is reported at the end."""
     src = tmp_path / 'videos'
     make_video(src / 'bad.mp4')
     make_video(src / 'good.mp4')
@@ -270,19 +299,33 @@ def test_cli_directory_failure_summary(tmp_path: Path, monkeypatch: pytest.Monke
     assert 'boom' in result.output
 
 
-def test_cli_directory_no_videos(tmp_path: Path) -> None:
-    """A directory without videos prints a hint and exits 0."""
+def test_cli_directory_no_media(tmp_path: Path) -> None:
+    """A directory without media files prints a hint and exits 0."""
     src = tmp_path / 'empty'
     src.mkdir()
-    (src / 'notes.txt').write_text('not a video')
+    (src / 'notes.txt').write_text('not a media file')
     result = runner.invoke(app, [str(src)])
     assert result.exit_code == 0
-    assert 'no video files found' in result.output
+    assert 'no media files found' in result.output
+
+
+def test_cli_directory_stem_conflict_exits_nonzero(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Audio and video sharing a stem conflict on the same output file."""
+    src = tmp_path / 'videos'
+    make_video(src / 'song.mp3')
+    make_video(src / 'song.mp4')
+    monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 1
+    assert 'conflicting output files' in result.output
+    assert 'song.mp3' in result.output
+    assert 'song.mp4' in result.output
+    assert not (src / 'song.srt').exists()
 
 
 def test_cli_directory_dst_must_be_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Directory mode with a DST that exists as a file fails with exit code 1."""
-    src = _make_video_dir(tmp_path)
+    src = _make_media_dir(tmp_path)
     dst = tmp_path / 'out.srt'
     dst.write_text('existing file')
     monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
@@ -293,7 +336,7 @@ def test_cli_directory_dst_must_be_directory(tmp_path: Path, monkeypatch: pytest
 
 def test_cli_directory_creates_dst(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A missing DST directory is created automatically."""
-    src = _make_video_dir(tmp_path)
+    src = _make_media_dir(tmp_path)
     dst = tmp_path / 'created' / 'nested'
     monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
     result = runner.invoke(app, [str(src), str(dst)])
