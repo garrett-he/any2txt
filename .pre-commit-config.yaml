@@ -1,0 +1,18 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: fix-byte-order-marker
+
+  - repo: local
+    hooks:
+      - id: check
+        name: Run checkers
+        entry: just check
+        language: system
+        pass_filenames: false
+        always_run: true

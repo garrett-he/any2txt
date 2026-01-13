@@ -1,0 +1,92 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = [ "hatchling" ]
+
+[project]
+name = "any2txt"
+version = "0.1.0"
+description = "Extract clean plain text from any documents."
+readme = "README.md"
+keywords = [ "documentation", "plaintext", "transcribe" ]
+license = { text = "MIT" }
+maintainers = [ { name = "Garrett HE", email = "garrett.he@outlook.com" } ]
+authors = [ { name = "Garrett HE", email = "garrett.he@outlook.com" } ]
+requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "typer>=0.26.8",
+]
+optional-dependencies.dev = [
+    "pre-commit>=4.6.1",
+    "pyproject-fmt>=2.25.3",
+    "pyrefly>=1.1.1",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.0",
+    "rumdl>=0.2.41",
+]
+urls.Documentation = "https://github.com/garrett-he/any2txt/blob/main/README.md"
+urls.Homepage = "https://github.com/garrett-he/any2txt"
+urls.Issues = "https://github.com/garrett-he/any2txt/issues"
+urls.Repository = "https://github.com/garrett-he/any2txt.git"
+scripts.any2txt = "any2txt.cli:app"
+
+[tool.hatch]
+build.targets.wheel.packages = [ "src/any2txt" ]
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+format.indent-style = "space"
+format.quote-style = "single"
+format.line-ending = "lf"
+lint.select = [ "A", "B", "C4", "D", "E", "F", "I", "N", "RUF", "SIM", "TCH", "UP", "W" ]
+lint.pydocstyle.convention = "google"
+
+[tool.pyproject-fmt]
+indent = 4
+keep_full_version = true
+generate_python_version_classifiers = true
+max_supported_python = "3.14"
+
+[tool.pyrefly]
+project-includes = [ "src", "tests" ]
+errors.implicit-abstract-class = "error"
+errors.implicitly-defined-attribute = "error"
+errors.missing-override-decorator = "error"
+errors.unannotated-attribute = "error"
+errors.unannotated-parameter = "error"
+errors.unannotated-return = "error"
+errors.untyped-import = "error"
+preset = "strict"
+
+[tool.pytest]
+ini_options.addopts = "-ra --strict-markers --strict-config --cov=any2txt --cov-report=term-missing"
+
+[tool.coverage]
+run.source = [ "any2txt" ]
+report.fail_under = 80
+report.show_missing = true
+
+[tool.rumdl]
+line-length = 120
+disable = [
+    "MD033",
+    "MD034",
+    "MD041",
+]
+MD004.style = "dash"
+MD007.indent = 2
+MD013.line_length = 120
+MD013.strict = false
+MD013.code_blocks = false
+MD013.tables = false
+MD024.allow_different_nesting = true
+MD026.punctuation = ".,;:!"

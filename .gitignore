@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+.python-version
+
+# Environment
+.env
+
+# Ansible Vault
+deploy/vault/password.txt
+
+# Backups
+backups/
+
+# Testing & Linting
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.rumdl_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*~
+
+# Operating System
+.DS_Store
+Thumbs.db
