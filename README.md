@@ -4,7 +4,8 @@
 [![ci](https://github.com/garrett-he/any2txt/actions/workflows/ci.yml/badge.svg)](https://github.com/garrett-he/any2txt/actions/workflows/ci.yml)
 
 Transcribe video or audio files into SRT subtitles with local speech
-recognition (faster-whisper). No API key, no ffmpeg required.
+recognition (faster-whisper), and recognize text in images with local
+OCR (RapidOCR). No API key, no ffmpeg required.
 
 ## Install
 
@@ -51,12 +52,22 @@ any2txt videos/ output/
 # Include subdirectories (mirrored under the output directory) and
 # re-convert files whose output already exists
 any2txt videos/ output/ --recursive --force
+
+# Recognize text in an image with OCR; writes photo.txt next to the source
+any2txt photo.png
+
+# Explicit output path for images (must end with .txt)
+any2txt photo.png output.txt
+
+# OCR output also honors --han (simplified/traditional Chinese)
+any2txt photo.png --han simplified
 ```
 
 ### Directory mode
 
-When SRC is a directory, every video or audio file found is converted
-to `{name}.srt`. Without DST each `.srt` is written next to its source
+When SRC is a directory, every supported media file found is converted:
+video and audio files become `{name}.srt`, images become `{name}.txt`.
+Without DST each output is written next to its source
 file; with DST it is written into that directory (mirroring
 subdirectories with `--recursive`). Existing outputs are skipped unless
 `--force` is given. One failing file does not stop the batch: failures
@@ -74,7 +85,7 @@ conflict on the same output path and are reported as an error.
 | `--model`           | `base`      | Whisper model size (`tiny`, `base`, `small`, `medium`, ...)        |
 | `--language`        | auto-detect | ISO language code of the audio (e.g. `zh`)                         |
 | `-r`, `--recursive` | off         | Also process files in subdirectories (directory mode)              |
-| `-f`, `--force`     | off         | Re-convert files whose output .srt already exists (directory mode)  |
+| `-f`, `--force`     | off         | Re-convert files whose output already exists (directory mode)       |
 | `--version`         |             | Print the version and exit                                         |
 
 ## Notes
@@ -84,6 +95,10 @@ conflict on the same output path and are reported as an error.
 - Inference runs on CPU with int8 quantization by default.
 - Silent stretches are filtered with VAD to avoid hallucinated text;
   media without speech (e.g. music) produces an empty `.srt`.
+- Image OCR uses RapidOCR with the bundled PP-OCRv6 Chinese/English
+  models (ONNX Runtime backend); no model download is required.
+- OCR output lists each detected text block on its own line, ordered
+  top-to-bottom; images without detectable text produce an empty `.txt`.
 
 ## Development
 

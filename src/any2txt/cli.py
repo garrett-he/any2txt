@@ -10,6 +10,8 @@ from any2txt import __version__
 from any2txt.asr.faster_whisper import transcribe
 from any2txt.formats.srt import DEFAULT_LINE_WIDTH, DEFAULT_MAX_LINES, format_srt
 from any2txt.media import is_supported
+from any2txt.media.image import is_image
+from any2txt.ocr import recognize
 from any2txt.text import HanVariant, convert_han
 
 app = typer.Typer()
@@ -46,9 +48,24 @@ def _render_srt(source: Path, options: _Options) -> str:
     return text
 
 
+def _render_txt(source: Path, options: _Options) -> str:
+    """Recognize one image file and return its plain text."""
+    text = convert_han(recognize(source), options.han)
+    if not text:
+        typer.echo('no text detected')
+    return text
+
+
+def _render(source: Path, options: _Options) -> str:
+    """Convert one media file to text, dispatching by media type."""
+    if is_image(source):
+        return _render_txt(source, options)
+    return _render_srt(source, options)
+
+
 def _convert_one(source: Path, output: Path, options: _Options) -> None:
-    """Transcribe one media file and write its SRT file."""
-    output.write_text(_render_srt(source, options), encoding='utf-8')
+    """Convert one media file and write its output text file."""
+    output.write_text(_render(source, options), encoding='utf-8')
 
 
 def _collect_media(src: Path, recursive: bool) -> list[Path]:
@@ -57,12 +74,17 @@ def _collect_media(src: Path, recursive: bool) -> list[Path]:
     return sorted(path for path in candidates if path.is_file() and is_supported(path))
 
 
-def _output_path(video: Path, src: Path, dst: Path | None, recursive: bool) -> Path:
-    """Return the SRT output path for one media file in directory mode."""
+def _output_path(media: Path, src: Path, dst: Path | None, recursive: bool, suffix: str) -> Path:
+    """Return the output path for one media file in directory mode."""
     if dst is None:
-        return video.with_suffix('.srt')
-    relative = video.relative_to(src) if recursive else Path(video.name)
-    return dst / relative.with_suffix('.srt')
+        return media.with_suffix(suffix)
+    relative = media.relative_to(src) if recursive else Path(media.name)
+    return dst / relative.with_suffix(suffix)
+
+
+def _output_suffix(media: Path) -> str:
+    """Return the output file extension for one media file."""
+    return '.txt' if is_image(media) else '.srt'
 
 
 def _convert_directory(
@@ -80,7 +102,7 @@ def _convert_directory(
     if not media_files:
         typer.echo('no media files found')
         return 0
-    jobs = [(media, _output_path(media, src, dst, recursive)) for media in media_files]
+    jobs = [(media, _output_path(media, src, dst, recursive, _output_suffix(media))) for media in media_files]
     outputs_seen: dict[Path, Path] = {}
     conflicts: list[tuple[Path, Path]] = []
     for media, output in jobs:
@@ -91,9 +113,10 @@ def _convert_directory(
     if conflicts:
         typer.echo('Error: conflicting output files:', err=True)
         for first, second in conflicts:
-            typer.echo(f'  {first} and {second} both write {second.with_suffix(".srt")}', err=True)
+            typer.echo(f'  {first} and {second} both write {second.with_suffix(_output_suffix(second))}', err=True)
         return 1
-    typer.echo('Loading model (first use of a model size downloads it)...')
+    if any(not is_image(media) for media, _ in jobs):
+        typer.echo('Loading model (first use of a model size downloads it)...')
     total = len(jobs)
     converted = skipped = 0
     failures: list[tuple[Path, str]] = []
@@ -126,7 +149,7 @@ def main(
     src: Annotated[Path, typer.Argument(help='Path to a media file, or a directory of media files.')],
     dst: Annotated[
         Path | None,
-        typer.Argument(help='Output .srt path (file mode) or output directory (directory mode).'),
+        typer.Argument(help='Output .txt or .srt path (file mode) or output directory (directory mode).'),
     ] = None,
     han: Annotated[
         HanVariant,
@@ -174,7 +197,7 @@ def main(
         typer.Option(
             '--force',
             '-f',
-            help='Re-convert videos whose output .srt already exists (directory mode).',
+            help='Re-convert media files whose output already exists (directory mode).',
         ),
     ] = False,
     version: Annotated[
@@ -202,15 +225,17 @@ def main(
         typer.echo(f'Error: source not found: {src}', err=True)
         raise typer.Exit(1)
     if not is_supported(src):
-        typer.echo(f'Error: not a supported video or audio file: {src}', err=True)
+        typer.echo(f'Error: not a supported media file: {src}', err=True)
         raise typer.Exit(1)
-    if dst is not None and dst.suffix.lower() != '.srt':
-        typer.echo(f'Error: unsupported output extension {dst.suffix!r}; use .srt', err=True)
+    suffix = _output_suffix(src)
+    if dst is not None and dst.suffix.lower() != suffix:
+        typer.echo(f'Error: unsupported output extension {dst.suffix!r}; use {suffix}', err=True)
         raise typer.Exit(1)
-    output = dst if dst is not None else src.with_suffix('.srt')
-    typer.echo('Loading model (first use of a model size downloads it)...')
+    output = dst if dst is not None else src.with_suffix(suffix)
+    if not is_image(src):
+        typer.echo('Loading model (first use of a model size downloads it)...')
     try:
-        text = _render_srt(src, options)
+        text = _render(src, options)
     except Exception as exc:
         typer.echo(f'Error: conversion failed: {exc}', err=True)
         raise typer.Exit(1) from None

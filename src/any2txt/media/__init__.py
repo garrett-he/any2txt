@@ -9,6 +9,7 @@ that way; new types are only scanned and validated here.
 from pathlib import Path
 
 from any2txt.media.audio import is_audio
+from any2txt.media.image import is_image
 from any2txt.media.video import is_video
 
 __all__ = ['is_supported']
@@ -17,6 +18,6 @@ __all__ = ['is_supported']
 def is_supported(path: Path) -> bool:
     """Return True if any registered media type claims the path's extension.
 
-    New media types (pdf, image, ...) plug in here.
+    New media types (pdf, ...) plug in here.
     """
-    return is_video(path) or is_audio(path)
+    return is_video(path) or is_audio(path) or is_image(path)

@@ -43,10 +43,39 @@ def fake_transcribe_silent(_audio: Path, **_kwargs: object) -> Iterator[Segment]
     return iter([])
 
 
+def fake_recognize(_image: Path) -> str:
+    """Return fixed OCR text."""
+    return 'Hello OCR'
+
+
+def fake_recognize_traditional(_image: Path) -> str:
+    """Return OCR text in traditional Chinese."""
+    return '簡體中文與繁體中文'
+
+
+def fake_recognize_empty(_image: Path) -> str:
+    """Return no text at all (nothing detected)."""
+    return ''
+
+
+def fake_recognize_selective(image: Path) -> str:
+    """Fail on bad.png, succeed on everything else."""
+    if image.name == 'bad.png':
+        raise RuntimeError('boom')
+    return 'Hello OCR'
+
+
 def make_video(path: Path) -> Path:
     """Create a fake video file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b'fake video data')
+    return path
+
+
+def make_image(path: Path) -> Path:
+    """Create a fake image file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b'fake image data')
     return path
 
 
@@ -81,11 +110,11 @@ def test_cli_source_not_found(tmp_path: Path) -> None:
 
 def test_cli_rejects_unsupported_media(tmp_path: Path) -> None:
     """An unsupported extension fails with exit code 1."""
-    src = tmp_path / 'notes.txt'
+    src = tmp_path / 'notes.pdf'
     src.write_text('not a media file')
     result = runner.invoke(app, [str(src)])
     assert result.exit_code == 1
-    assert 'not a supported video or audio file' in result.output
+    assert 'not a supported media file' in result.output
 
 
 def test_cli_accepts_audio_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -342,3 +371,113 @@ def test_cli_directory_creates_dst(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     result = runner.invoke(app, [str(src), str(dst)])
     assert result.exit_code == 0
     assert (dst / 'a.srt').read_text(encoding='utf-8') == SRT_EXPECTED
+
+
+def test_cli_image_writes_txt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An image is OCR-converted into a .txt next to it by default."""
+    src = make_image(tmp_path / 'photo.png')
+    monkeypatch.setattr('any2txt.cli.recognize', fake_recognize)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    dst = src.with_suffix('.txt')
+    assert dst.is_file()
+    assert dst.read_text(encoding='utf-8') == 'Hello OCR'
+    assert 'Loading model' not in result.output
+
+
+def test_cli_image_explicit_dst_is_used_as_is(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit .txt DST receives the OCR content verbatim."""
+    src = make_image(tmp_path / 'photo.png')
+    dst = tmp_path / 'out.txt'
+    monkeypatch.setattr('any2txt.cli.recognize', fake_recognize)
+    result = runner.invoke(app, [str(src), str(dst)])
+    assert result.exit_code == 0
+    assert dst.read_text(encoding='utf-8') == 'Hello OCR'
+
+
+def test_cli_image_rejects_non_txt_dst(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An image DST with a non-.txt extension fails with exit code 1."""
+    src = make_image(tmp_path / 'photo.png')
+    dst = tmp_path / 'out.srt'
+    monkeypatch.setattr('any2txt.cli.recognize', fake_recognize)
+    result = runner.invoke(app, [str(src), str(dst)])
+    assert result.exit_code == 1
+    assert 'use .txt' in result.output
+
+
+def test_cli_image_uppercase_extension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Image extension matching is case-insensitive."""
+    src = make_image(tmp_path / 'PHOTO.PNG')
+    monkeypatch.setattr('any2txt.cli.recognize', fake_recognize)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert src.with_suffix('.txt').is_file()
+
+
+def test_cli_image_empty_result_writes_empty_txt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No detected text produces an empty .txt plus a 'no text detected' hint."""
+    src = make_image(tmp_path / 'blank.png')
+    monkeypatch.setattr('any2txt.cli.recognize', fake_recognize_empty)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert 'no text detected' in result.output
+    assert src.with_suffix('.txt').read_text(encoding='utf-8') == ''
+
+
+def test_cli_image_han_simplified(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--han simplified converts the OCR output to simplified Chinese."""
+    src = make_image(tmp_path / 'photo.png')
+    monkeypatch.setattr('any2txt.cli.recognize', fake_recognize_traditional)
+    result = runner.invoke(app, [str(src), '--han', 'simplified'])
+    assert result.exit_code == 0
+    assert src.with_suffix('.txt').read_text(encoding='utf-8') == '简体中文与繁体中文'
+
+
+def test_cli_image_conversion_failure_exits_nonzero(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """OCR errors are reported cleanly instead of a traceback."""
+    src = make_image(tmp_path / 'bad.png')
+    monkeypatch.setattr('any2txt.cli.recognize', fake_recognize_selective)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 1
+    assert 'conversion failed' in result.output
+
+
+def test_cli_directory_mixed_media(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mixed directory yields .srt for audio/video and .txt for images."""
+    src = tmp_path / 'media'
+    make_video(src / 'a.mp4')
+    make_image(src / 'b.png')
+    monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
+    monkeypatch.setattr('any2txt.cli.recognize', fake_recognize)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert (src / 'a.srt').read_text(encoding='utf-8') == SRT_EXPECTED
+    assert (src / 'b.txt').read_text(encoding='utf-8') == 'Hello OCR'
+    assert 'Loading model' in result.output
+
+
+def test_cli_directory_images_only_skips_model_hint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An image-only directory does not print the ASR model loading hint."""
+    src = tmp_path / 'media'
+    make_image(src / 'a.png')
+    make_image(src / 'b.jpg')
+    monkeypatch.setattr('any2txt.cli.recognize', fake_recognize)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert (src / 'a.txt').read_text(encoding='utf-8') == 'Hello OCR'
+    assert (src / 'b.txt').is_file()
+    assert 'Loading model' not in result.output
+
+
+def test_cli_directory_image_failure_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing image does not stop the batch and is reported at the end."""
+    src = tmp_path / 'media'
+    make_image(src / 'bad.png')
+    make_image(src / 'good.png')
+    monkeypatch.setattr('any2txt.cli.recognize', fake_recognize_selective)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 1
+    assert (src / 'good.txt').is_file()
+    assert not (src / 'bad.txt').exists()
+    assert 'Failed files:' in result.output
+    assert 'bad.png' in result.output
