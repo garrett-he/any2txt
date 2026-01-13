@@ -5,9 +5,9 @@ requires = [ "hatchling" ]
 [project]
 name = "any2txt"
 version = "0.1.0"
-description = "Extract clean plain text from any documents."
+description = "Transcribe video audio into SRT subtitles with local speech recognition."
 readme = "README.md"
-keywords = [ "documentation", "plaintext", "transcribe" ]
+keywords = [ "asr", "subtitles", "transcribe" ]
 license = { text = "MIT" }
 maintainers = [ { name = "Garrett HE", email = "garrett.he@outlook.com" } ]
 authors = [ { name = "Garrett HE", email = "garrett.he@outlook.com" } ]
@@ -21,6 +21,10 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
+    # faster-whisper passes metadata_errors to av.open(), removed in av 16+
+    "av<16",
+    "faster-whisper>=1.2.1",
+    "opencc-python-reimplemented>=0.1.7",
     "typer>=0.26.8",
 ]
 optional-dependencies.dev = [
@@ -47,7 +51,9 @@ indent-width = 4
 format.indent-style = "space"
 format.quote-style = "single"
 format.line-ending = "lf"
-lint.select = [ "A", "B", "C4", "D", "E", "F", "I", "N", "RUF", "SIM", "TCH", "UP", "W" ]
+lint.select = [ "A", "B", "C4", "D", "E", "F", "I", "N", "RUF", "SIM", "TC", "UP", "W" ]
+lint.per-file-ignores."src/any2txt/formats/srt.py" = [ "RUF001" ]
+lint.per-file-ignores."tests/test_srt.py" = [ "RUF001" ]
 lint.pydocstyle.convention = "google"
 
 [tool.pyproject-fmt]
