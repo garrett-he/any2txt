@@ -4,8 +4,9 @@
 [![ci](https://github.com/garrett-he/any2txt/actions/workflows/ci.yml/badge.svg)](https://github.com/garrett-he/any2txt/actions/workflows/ci.yml)
 
 Transcribe video or audio files into SRT subtitles with local speech
-recognition (faster-whisper), and recognize text in images with local
-OCR (RapidOCR). No API key, no ffmpeg required.
+recognition (faster-whisper), recognize text in images with local OCR
+(RapidOCR), and convert Word documents into Markdown (mammoth +
+markdownify). No API key, no ffmpeg required.
 
 ## Install
 
@@ -61,13 +62,20 @@ any2txt photo.png output.txt
 
 # OCR output also honors --han (simplified/traditional Chinese)
 any2txt photo.png --han simplified
+
+# Convert a Word document to Markdown; writes doc.md next to the source
+any2txt doc.docx
+
+# Explicit output path for docx (must end with .md)
+any2txt doc.docx output.md
 ```
 
 ### Directory mode
 
 When SRC is a directory, every supported media file found is converted:
-video and audio files become `{name}.srt`, images become `{name}.txt`.
-Without DST each output is written next to its source
+video and audio files become `{name}.srt`, images become `{name}.txt`,
+and Word documents become `{name}.md`. Without DST each output is
+written next to its source
 file; with DST it is written into that directory (mirroring
 subdirectories with `--recursive`). Existing outputs are skipped unless
 `--force` is given. One failing file does not stop the batch: failures
@@ -99,6 +107,13 @@ conflict on the same output path and are reported as an error.
   models (ONNX Runtime backend); no model download is required.
 - OCR output lists each detected text block on its own line, ordered
   top-to-bottom; images without detectable text produce an empty `.txt`.
+- docx conversion keeps the document's semantic structure (headings,
+  emphasis, lists, links, tables); visual styling (fonts, colors, sizes)
+  is not preserved. `--han` is not applied to docx output.
+- Embedded images and OLE objects are extracted into a `{name}_files/`
+  directory next to the output Markdown and referenced with relative
+  paths; OLE objects cannot be located in the document flow, so they
+  are listed in an appendix section at the end.
 
 ## Development
 

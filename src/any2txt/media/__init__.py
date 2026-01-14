@@ -9,6 +9,7 @@ that way; new types are only scanned and validated here.
 from pathlib import Path
 
 from any2txt.media.audio import is_audio
+from any2txt.media.docx import is_docx
 from any2txt.media.image import is_image
 from any2txt.media.video import is_video
 
@@ -20,4 +21,4 @@ def is_supported(path: Path) -> bool:
 
     New media types (pdf, ...) plug in here.
     """
-    return is_video(path) or is_audio(path) or is_image(path)
+    return is_video(path) or is_audio(path) or is_image(path) or is_docx(path)

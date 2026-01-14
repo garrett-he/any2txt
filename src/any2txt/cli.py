@@ -1,5 +1,6 @@
 """CLI for any2txt."""
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -8,8 +9,10 @@ import typer
 
 from any2txt import __version__
 from any2txt.asr.faster_whisper import transcribe
+from any2txt.docx import assets_dir_for, convert_docx
 from any2txt.formats.srt import DEFAULT_LINE_WIDTH, DEFAULT_MAX_LINES, format_srt
 from any2txt.media import is_supported
+from any2txt.media.docx import is_docx
 from any2txt.media.image import is_image
 from any2txt.ocr import recognize
 from any2txt.text import HanVariant, convert_han
@@ -56,8 +59,13 @@ def _render_txt(source: Path, options: _Options) -> str:
     return text
 
 
-def _render(source: Path, options: _Options) -> str:
+def _render(source: Path, output: Path, options: _Options) -> str:
     """Convert one media file to text, dispatching by media type."""
+    if is_docx(source):
+        text = convert_docx(source, output)
+        if not text:
+            typer.echo('no content detected')
+        return text
     if is_image(source):
         return _render_txt(source, options)
     return _render_srt(source, options)
@@ -65,7 +73,7 @@ def _render(source: Path, options: _Options) -> str:
 
 def _convert_one(source: Path, output: Path, options: _Options) -> None:
     """Convert one media file and write its output text file."""
-    output.write_text(_render(source, options), encoding='utf-8')
+    output.write_text(_render(source, output, options), encoding='utf-8')
 
 
 def _collect_media(src: Path, recursive: bool) -> list[Path]:
@@ -84,6 +92,8 @@ def _output_path(media: Path, src: Path, dst: Path | None, recursive: bool, suff
 
 def _output_suffix(media: Path) -> str:
     """Return the output file extension for one media file."""
+    if is_docx(media):
+        return '.md'
     return '.txt' if is_image(media) else '.srt'
 
 
@@ -115,7 +125,7 @@ def _convert_directory(
         for first, second in conflicts:
             typer.echo(f'  {first} and {second} both write {second.with_suffix(_output_suffix(second))}', err=True)
         return 1
-    if any(not is_image(media) for media, _ in jobs):
+    if any(not (is_image(media) or is_docx(media)) for media, _ in jobs):
         typer.echo('Loading model (first use of a model size downloads it)...')
     total = len(jobs)
     converted = skipped = 0
@@ -131,6 +141,8 @@ def _convert_directory(
             _convert_one(media, output, options)
         except Exception as exc:
             output.unlink(missing_ok=True)
+            if is_docx(media):
+                shutil.rmtree(assets_dir_for(output), ignore_errors=True)
             failures.append((media, str(exc)))
             typer.echo(f'Failed: {media}: {exc}', err=True)
         else:
@@ -205,12 +217,11 @@ def main(
         typer.Option('--version', callback=_version_callback, is_eager=True),
     ] = False,
 ) -> None:
-    """Transcribe the audio of a video or audio file into SRT subtitles.
+    """Convert media files: video/audio to SRT, images to text, docx to Markdown.
 
     SRC may be a media file or a directory of media files. With a
-    directory, every file is converted to ``{name}.srt`` next to it, or
-    into DST when given; ``--force`` re-converts files whose output
-    exists.
+    directory, every file is converted next to it (or into DST when
+    given); ``--force`` re-converts files whose output exists.
     """
     options = _Options(
         han=han,
@@ -232,11 +243,13 @@ def main(
         typer.echo(f'Error: unsupported output extension {dst.suffix!r}; use {suffix}', err=True)
         raise typer.Exit(1)
     output = dst if dst is not None else src.with_suffix(suffix)
-    if not is_image(src):
+    if not (is_image(src) or is_docx(src)):
         typer.echo('Loading model (first use of a model size downloads it)...')
     try:
-        text = _render(src, options)
+        text = _render(src, output, options)
     except Exception as exc:
+        if is_docx(src):
+            shutil.rmtree(assets_dir_for(output), ignore_errors=True)
         typer.echo(f'Error: conversion failed: {exc}', err=True)
         raise typer.Exit(1) from None
     try:

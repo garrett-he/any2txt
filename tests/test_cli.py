@@ -65,6 +65,22 @@ def fake_recognize_selective(image: Path) -> str:
     return 'Hello OCR'
 
 
+def fake_convert_docx(_source: Path, _output: Path) -> str:
+    """Return fixed Markdown content."""
+    return '# Doc'
+
+
+def fake_convert_docx_empty(_source: Path, _output: Path) -> str:
+    """Return no Markdown content at all (nothing detected)."""
+    return ''
+
+
+def fake_convert_docx_failing(source: Path, output: Path) -> str:
+    """Create a leftover assets directory, then fail."""
+    output.parent.joinpath(f'{output.stem}_files').mkdir(parents=True, exist_ok=True)
+    raise RuntimeError('boom')
+
+
 def make_video(path: Path) -> Path:
     """Create a fake video file."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,6 +92,13 @@ def make_image(path: Path) -> Path:
     """Create a fake image file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b'fake image data')
+    return path
+
+
+def make_docx(path: Path) -> Path:
+    """Create a fake docx file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b'fake docx data')
     return path
 
 
@@ -481,3 +504,101 @@ def test_cli_directory_image_failure_summary(tmp_path: Path, monkeypatch: pytest
     assert not (src / 'bad.txt').exists()
     assert 'Failed files:' in result.output
     assert 'bad.png' in result.output
+
+
+def test_cli_docx_writes_md(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A docx file is converted into a .md next to it by default."""
+    src = make_docx(tmp_path / 'doc.docx')
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    dst = src.with_suffix('.md')
+    assert dst.is_file()
+    assert dst.read_text(encoding='utf-8') == '# Doc'
+    assert 'Loading model' not in result.output
+
+
+def test_cli_docx_explicit_dst_is_used_as_is(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit .md DST receives the Markdown content verbatim."""
+    src = make_docx(tmp_path / 'doc.docx')
+    dst = tmp_path / 'out.md'
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx)
+    result = runner.invoke(app, [str(src), str(dst)])
+    assert result.exit_code == 0
+    assert dst.read_text(encoding='utf-8') == '# Doc'
+
+
+def test_cli_docx_rejects_non_md_dst(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A docx DST with a non-.md extension fails with exit code 1."""
+    src = make_docx(tmp_path / 'doc.docx')
+    dst = tmp_path / 'out.txt'
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx)
+    result = runner.invoke(app, [str(src), str(dst)])
+    assert result.exit_code == 1
+    assert 'use .md' in result.output
+
+
+def test_cli_docx_empty_result_writes_empty_md(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty document produces an empty .md plus a 'no content detected' hint."""
+    src = make_docx(tmp_path / 'blank.docx')
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx_empty)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert 'no content detected' in result.output
+    assert src.with_suffix('.md').read_text(encoding='utf-8') == ''
+
+
+def test_cli_docx_failure_cleans_assets_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed docx conversion leaves neither the .md nor the assets directory."""
+    src = make_docx(tmp_path / 'bad.docx')
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx_failing)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 1
+    assert 'conversion failed' in result.output
+    assert not (tmp_path / 'bad.md').exists()
+    assert not (tmp_path / 'bad_files').exists()
+
+
+def test_cli_directory_all_media_types(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mixed directory yields .srt, .txt and .md outputs per media type."""
+    src = tmp_path / 'media'
+    make_video(src / 'a.mp4')
+    make_image(src / 'b.png')
+    make_docx(src / 'c.docx')
+    make_docx(src / 'sub' / 'd.docx')
+    monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
+    monkeypatch.setattr('any2txt.cli.recognize', fake_recognize)
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert (src / 'a.srt').read_text(encoding='utf-8') == SRT_EXPECTED
+    assert (src / 'b.txt').read_text(encoding='utf-8') == 'Hello OCR'
+    assert (src / 'c.md').read_text(encoding='utf-8') == '# Doc'
+    assert not (src / 'sub' / 'd.md').exists()
+    assert 'Loading model' in result.output
+
+
+def test_cli_directory_docx_only_skips_model_hint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A docx-only directory does not print the ASR model loading hint."""
+    src = tmp_path / 'media'
+    make_docx(src / 'a.docx')
+    make_docx(src / 'b.docx')
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert (src / 'a.md').is_file()
+    assert (src / 'b.md').is_file()
+    assert 'Loading model' not in result.output
+
+
+def test_cli_directory_docx_failure_cleans_assets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing docx in a batch leaves no partial output or assets behind."""
+    src = tmp_path / 'media'
+    make_docx(src / 'bad.docx')
+    make_docx(src / 'good.docx')
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx_failing)
+    result = runner.invoke(app, [str(src), '--force'])
+    assert result.exit_code == 1
+    assert 'Failed files:' in result.output
+    assert not (src / 'bad.md').exists()
+    assert not (src / 'bad_files').exists()

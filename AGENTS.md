@@ -4,9 +4,10 @@ Guidance for AI coding agents working in this repository.
 
 ## What this project is
 
-A Typer CLI (`any2txt`) that transcribes the audio track of a video file
-into SRT subtitles using faster-whisper locally. See README.md for user
-facing docs; this file covers things agents need to know.
+A Typer CLI (`any2txt`) that converts media files locally: video/audio
+to SRT subtitles (faster-whisper), images to plain text (RapidOCR), and
+docx documents to Markdown (mammoth + markdownify). See README.md for
+user facing docs; this file covers things agents need to know.
 
 ## Architecture
 
@@ -16,11 +17,18 @@ src/any2txt/
 ├── asr/                # speech recognition backends
 │   ├── base.py         # Segment dataclass: the contract between layers
 │   └── faster_whisper.py
+├── docx/               # docx to Markdown backend (mammoth + markdownify)
+│   ├── mammoth_docx.py # docx -> semantic HTML, asset extraction ({stem}_files/)
+│   └── markdown_render.py # HTML -> Markdown (MarkdownConverter subclass with tables)
 ├── formats/            # output renderers (currently SRT only)
 │   └── srt.py
 ├── media/              # input handling, one module per media type
 │   ├── audio.py        # extension-based validation only
+│   ├── docx.py         # extension-based validation only
+│   ├── image.py        # extension-based validation only
 │   └── video.py        # extension-based validation only
+├── ocr/                # image text recognition backend (RapidOCR)
+│   └── rapid_ocr.py
 └── text/               # post-processing (han.py: script conversion)
 ```
 
@@ -38,10 +46,12 @@ Design rules:
 
 ## Planned extensions (keep the seams clean)
 
-Future media types (audio, pdf, image) each get a module under
-`media/`. New output formats go under `formats/`. A new ASR engine goes
-under `asr/` and must yield `Segment` objects as defined in
-`asr/base.py`. If a change crosses these layers, stop and reconsider.
+Future media types (pdf, ...) each get a module under `media/`. New
+output formats go under `formats/`. A new ASR engine goes under `asr/`
+and must yield `Segment` objects as defined in `asr/base.py`. New OCR
+or document-conversion engines go under `ocr/` or `docx/` (backends
+that are not ASR do not yield `Segment` objects). If a change crosses
+these layers, stop and reconsider.
 
 ## Toolchain and conventions
 
@@ -82,8 +92,12 @@ under `asr/` and must yield `Segment` objects as defined in
 - The packaged entry point is `any2txt.cli:app` with a single Typer
   command, so Typer treats it as the root command (no subcommand name).
 - `--han` uses a StrEnum; `convert_han` takes the enum, not a string.
+  It applies to SRT and OCR output, not to docx conversion.
 - Time math in `formats/srt.py` uses display width (full-width = 2);
   `\n` counts as 0. Keep that consistent when editing wrap/split logic.
+- docx conversion is the only path that receives the output path: it
+  writes assets into `{output.stem}_files/` next to the output file.
+  On failure, `cli.py` removes that directory as well as the output.
 
 ## Workflow expectations
 
