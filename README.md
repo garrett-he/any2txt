@@ -5,8 +5,9 @@
 
 Transcribe video or audio files into SRT subtitles with local speech
 recognition (faster-whisper), recognize text in images with local OCR
-(RapidOCR), and convert Word documents and HTML pages into Markdown
-(mammoth + markdownify). No API key, no ffmpeg required.
+(RapidOCR), and convert Word documents, HTML pages, and PowerPoint
+decks into Markdown (mammoth, markdownify, python-pptx). No API key,
+no ffmpeg required.
 
 ## Install
 
@@ -71,14 +72,17 @@ any2txt doc.docx output.md
 
 # Convert an HTML page to Markdown; writes page.md next to the source
 any2txt page.html
+
+# Convert a PowerPoint deck to Markdown; writes deck.md next to the source
+any2txt deck.pptx
 ```
 
 ### Directory mode
 
 When SRC is a directory, every supported media file found is converted:
 video and audio files become `{name}.srt`, images become `{name}.txt`,
-and Word documents and HTML pages become `{name}.md`. Without DST each
-output is written next to its source
+and Word documents, HTML pages, and PowerPoint decks become
+`{name}.md`. Without DST each output is written next to its source
 file; with DST it is written into that directory (mirroring
 subdirectories with `--recursive`). Existing outputs are skipped unless
 `--force` is given. One failing file does not stop the batch: failures
@@ -120,6 +124,11 @@ conflict on the same output path and are reported as an error.
 - HTML conversion renders the page structure to Markdown with the same
   engine as docx conversion (including tables); `--han` is not applied
   to docx/html output.
+- PowerPoint conversion renders each slide as a `##` section: the slide
+  title becomes the heading, body placeholders become bullet lists,
+  tables become Markdown tables, speaker notes become blockquotes, and
+  pictures are extracted into the `{name}_files/` directory like docx.
+  `--han` is not applied to pptx output.
 
 ## Development
 

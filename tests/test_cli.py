@@ -81,6 +81,11 @@ def fake_convert_docx_failing(source: Path, output: Path) -> str:
     raise RuntimeError('boom')
 
 
+def fake_convert_pptx(_source: Path, _output: Path) -> str:
+    """Return fixed Markdown content."""
+    return '## Slide 1'
+
+
 def make_video(path: Path) -> Path:
     """Create a fake video file."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -106,6 +111,13 @@ def make_html(path: Path, content: str = '<h1>Page</h1><p>body text</p>') -> Pat
     """Create a real HTML file for direct conversion testing."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding='utf-8')
+    return path
+
+
+def make_pptx(path: Path) -> Path:
+    """Create a fake pptx file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b'fake pptx data')
     return path
 
 
@@ -677,6 +689,76 @@ def test_cli_directory_html_only_skips_model_hint(tmp_path: Path) -> None:
     src = tmp_path / 'media'
     make_html(src / 'a.html')
     make_html(src / 'b.htm')
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert (src / 'a.md').is_file()
+    assert (src / 'b.md').is_file()
+    assert 'Loading model' not in result.output
+
+
+def test_cli_pptx_writes_md(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A pptx file is converted into a .md next to it by default."""
+    src = make_pptx(tmp_path / 'deck.pptx')
+    monkeypatch.setattr('any2txt.cli.convert_pptx', fake_convert_pptx)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    dst = src.with_suffix('.md')
+    assert dst.is_file()
+    assert dst.read_text(encoding='utf-8') == '## Slide 1'
+    assert 'Loading model' not in result.output
+
+
+def test_cli_pptx_explicit_dst_is_used_as_is(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit .md DST receives the Markdown content verbatim."""
+    src = make_pptx(tmp_path / 'deck.pptx')
+    dst = tmp_path / 'out.md'
+    monkeypatch.setattr('any2txt.cli.convert_pptx', fake_convert_pptx)
+    result = runner.invoke(app, [str(src), str(dst)])
+    assert result.exit_code == 0
+    assert dst.read_text(encoding='utf-8') == '## Slide 1'
+
+
+def test_cli_pptx_rejects_non_md_dst(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A pptx DST with a non-.md extension fails with exit code 1."""
+    src = make_pptx(tmp_path / 'deck.pptx')
+    dst = tmp_path / 'out.txt'
+    monkeypatch.setattr('any2txt.cli.convert_pptx', fake_convert_pptx)
+    result = runner.invoke(app, [str(src), str(dst)])
+    assert result.exit_code == 1
+    assert 'use .md' in result.output
+
+
+def test_cli_pptx_failure_cleans_assets_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed pptx conversion leaves neither the .md nor the assets directory."""
+    src = make_pptx(tmp_path / 'bad.pptx')
+    monkeypatch.setattr('any2txt.cli.convert_pptx', fake_convert_docx_failing)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 1
+    assert 'conversion failed' in result.output
+    assert not (tmp_path / 'bad.md').exists()
+    assert not (tmp_path / 'bad_files').exists()
+
+
+def test_cli_directory_with_pptx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pptx files convert to .md in directory mode alongside other media."""
+    src = tmp_path / 'media'
+    make_video(src / 'a.mp4')
+    make_pptx(src / 'b.pptx')
+    monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
+    monkeypatch.setattr('any2txt.cli.convert_pptx', fake_convert_pptx)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert (src / 'a.srt').read_text(encoding='utf-8') == SRT_EXPECTED
+    assert (src / 'b.md').read_text(encoding='utf-8') == '## Slide 1'
+    assert 'Loading model' in result.output
+
+
+def test_cli_directory_pptx_only_skips_model_hint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A pptx-only directory does not print the ASR model loading hint."""
+    src = tmp_path / 'media'
+    make_pptx(src / 'a.pptx')
+    make_pptx(src / 'b.pptx')
+    monkeypatch.setattr('any2txt.cli.convert_pptx', fake_convert_pptx)
     result = runner.invoke(app, [str(src)])
     assert result.exit_code == 0
     assert (src / 'a.md').is_file()

@@ -15,6 +15,7 @@ from typing import BinaryIO, Protocol
 
 import mammoth
 
+from any2txt.assets import assets_dir_for
 from any2txt.formats.markdown import html_to_markdown
 
 _CONTENT_TYPE_EXTENSIONS = {
@@ -38,11 +39,6 @@ class _MammothImage(Protocol):
     def open(self) -> BinaryIO:
         """Open the image data stream."""
         ...
-
-
-def assets_dir_for(output: Path) -> Path:
-    """Return the asset directory that accompanies one output file."""
-    return output.parent / f'{output.stem}_files'
 
 
 def _extension_for(content_type: str) -> str:
