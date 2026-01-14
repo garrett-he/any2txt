@@ -18,6 +18,7 @@ CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <Default Extension="xml" ContentType="application/xml"/>
   <Default Extension="png" ContentType="image/png"/>
   <Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
 </Types>"""
 
 ROOT_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -42,7 +43,22 @@ DOCUMENT_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com" TargetMode="External"/>
   <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>
   <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>
+  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>"""
+
+# A WPS-style sheet: the second style lacks the required w:type attribute.
+STYLES = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="{W_NS}">
+  <w:style w:type="paragraph" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+  </w:style>
+  <w:style w:styleId="b4d6bf" w:customStyle="1">
+    <w:name w:val="Emphasis"/>
+    <w:rPr>
+      <w:b/>
+    </w:rPr>
+  </w:style>
+</w:styles>'''
 
 PNG_1X1 = base64.b64decode(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
@@ -63,6 +79,7 @@ def build_docx(path: Path, body: str, extras: dict[str, bytes] | None = None) ->
         '_rels/.rels': ROOT_RELS,
         'word/_rels/document.xml.rels': DOCUMENT_RELS,
         'word/numbering.xml': NUMBERING,
+        'word/styles.xml': STYLES,
         'word/document.xml': f'{DOCUMENT_OPEN}{body}{DOCUMENT_CLOSE}',
     }
     with zipfile.ZipFile(path, 'w') as archive:
@@ -171,3 +188,14 @@ def test_convert_embeddings_appends_attachments(tmp_path: Path) -> None:
 def test_convert_empty_document(tmp_path: Path) -> None:
     """An empty document converts to an empty string."""
     assert convert_fixture(tmp_path, '') == ''
+
+
+def test_convert_tolerates_styles_without_type(tmp_path: Path) -> None:
+    """WPS-style sheets missing w:type do not crash the conversion."""
+    body = """
+    <w:p>
+      <w:pPr><w:pStyle w:val="b4d6bf"/></w:pPr>
+      <w:r><w:t>styled text</w:t></w:r>
+    </w:p>"""
+    markdown = convert_fixture(tmp_path, body)
+    assert 'styled text' in markdown

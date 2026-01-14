@@ -11,9 +11,10 @@ are extracted to the same directory and listed in an appendix section.
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
-from typing import BinaryIO, Protocol
+from typing import Any, BinaryIO, Protocol
 
 import mammoth
+from mammoth import docx as mammoth_docx
 
 from any2txt.assets import assets_dir_for
 from any2txt.formats.markdown import html_to_markdown
@@ -29,6 +30,31 @@ _CONTENT_TYPE_EXTENSIONS = {
     'image/x-emf': 'emf',
     'image/x-wmf': 'wmf',
 }
+
+
+def _ensure_wps_style_compat() -> None:
+    """Teach mammoth to tolerate WPS styles lacking the w:type attribute.
+
+    WPS writes ``<w:style>`` elements without the required ``w:type``
+    attribute, which crashes mammoth's styles reader with a KeyError.
+    Such styles are treated as paragraph styles (the dominant case) by
+    filling the attribute before mammoth reads it.
+    """
+    original = mammoth_docx.read_styles_xml_element
+
+    def tolerant_read_styles_xml_element(element: Any) -> Any:
+        for child in getattr(element, 'children', []):
+            if getattr(child, 'name', None) == 'w:style':
+                attributes = getattr(child, 'attributes', None)
+                if attributes is not None:
+                    attributes.setdefault('w:type', 'paragraph')
+        return original(element)
+
+    mammoth_docx.read_styles_xml_element = tolerant_read_styles_xml_element
+    mammoth_docx.styles_xml.read_styles_xml_element = tolerant_read_styles_xml_element
+
+
+_ensure_wps_style_compat()
 
 
 class _MammothImage(Protocol):
