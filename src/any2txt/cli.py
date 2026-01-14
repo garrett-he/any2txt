@@ -17,7 +17,7 @@ from any2txt.formats.srt import DEFAULT_LINE_WIDTH, DEFAULT_MAX_LINES, format_sr
 from any2txt.media import is_supported
 from any2txt.media.docx import is_docx
 from any2txt.media.excel import is_excel
-from any2txt.media.html import is_html
+from any2txt.media.html import copy_local_images, is_html
 from any2txt.media.image import is_image
 from any2txt.media.pdf import is_pdf
 from any2txt.media.pptx import is_pptx
@@ -68,9 +68,11 @@ def _render_txt(source: Path, options: _Options) -> str:
     return text
 
 
-def _render_html(source: Path) -> str:
-    """Render one HTML file as Markdown."""
-    text = html_to_markdown(source.read_text(encoding='utf-8-sig')).strip('\n')
+def _render_html(source: Path, output: Path) -> str:
+    """Render one HTML file as Markdown, copying local images next to the output."""
+    html = source.read_text(encoding='utf-8-sig')
+    html = copy_local_images(html, source, assets_dir_for(output))
+    text = html_to_markdown(html).strip('\n')
     if not text.strip():
         typer.echo('no content detected')
         return ''
@@ -95,7 +97,7 @@ def _render(source: Path, output: Path, options: _Options) -> str:
             typer.echo('no content detected')
         return text
     if is_html(source):
-        return _render_html(source)
+        return _render_html(source, output)
     if is_excel(source):
         text = convert_excel(source)
         if not text:
@@ -141,7 +143,7 @@ def _needs_asr(media: Path) -> bool:
 
 def _has_assets(media: Path) -> bool:
     """Return True if a media file extracts resources into an assets directory."""
-    return is_docx(media) or is_pptx(media) or is_pdf(media)
+    return is_docx(media) or is_html(media) or is_pptx(media) or is_pdf(media)
 
 
 def _convert_directory(

@@ -29,7 +29,7 @@ src/any2txt/
 │   ├── audio.py        # extension-based validation only
 │   ├── docx.py         # extension-based validation only
 │   ├── excel.py        # extension-based validation only
-│   ├── html.py         # extension-based validation only
+│   ├── html.py         # extension-based validation, local image extraction
 │   ├── image.py        # extension-based validation only
 │   ├── pdf.py          # extension-based validation only
 │   ├── pptx.py         # extension-based validation only
@@ -111,12 +111,14 @@ these layers, stop and reconsider.
 - docx conversion is the only path that receives the output path: it
   writes assets into `{output.stem}_files/` next to the output file.
   On failure, `cli.py` removes that directory as well as the output.
+- docx, html, pptx, and pdf write assets into the `{output.stem}_files/`
+  directory next to the output file (`assets.assets_dir_for`); on
+  failure, `cli.py` removes that directory as well as the output.
 - docx and html share the HTML-to-Markdown renderer in
   `formats/markdown.py` (a `MarkdownConverter` subclass with table
-  support, since markdownify has none natively).
-- docx, pptx, and pdf share the `{output.stem}_files/` asset-directory
-  convention from `assets.py`; on failure, `cli.py` removes that
-  directory as well as the output.
+  support, since markdownify has none natively). The filesystem part of
+  html conversion (copying locally referenced images) lives in
+  `media/html.py`, keeping `formats/` pure.
 - `pdf/pymupdf_pdf.py` infers headings from font sizes (PyMuPDF is
   AGPL-3.0 licensed); heading thresholds live in `_HEADING_RATIOS`.
 

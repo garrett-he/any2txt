@@ -128,8 +128,11 @@ conflict on the same output path and are reported as an error.
   paths; OLE objects cannot be located in the document flow, so they
   are listed in an appendix section at the end.
 - HTML conversion renders the page structure to Markdown with the same
-  engine as docx conversion (including tables); `--han` is not applied
-  to docx/html output.
+  engine as docx conversion (including tables). Images referenced by
+  local paths are copied into the `{name}_files/` directory next to the
+  output and referenced with relative paths; remote URLs, data URIs,
+  and missing files are left untouched. `--han` is not applied to
+  docx/html output.
 - PowerPoint conversion renders each slide as a `##` section: the slide
   title becomes the heading, body placeholders become bullet lists,
   tables become Markdown tables, speaker notes become blockquotes, and
