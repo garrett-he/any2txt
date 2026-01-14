@@ -8,6 +8,7 @@ embedded objects cannot be located inside the document flow, so they
 are extracted to the same directory and listed in an appendix section.
 """
 
+import io
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -101,6 +102,99 @@ def _extract_embeddings(source: Path, assets_dir: Path) -> list[str]:
     return names
 
 
+_DRAWING_OPEN = '<w:drawing>'
+_DRAWING_CLOSE = '</w:drawing>'
+_TXBX_OPEN = '<w:txbxContent>'
+_TXBX_CLOSE = '</w:txbxContent>'
+
+
+def _find_drawing_end(xml: str, start: int) -> int:
+    """Return the index past the drawing opening at start, handling nesting."""
+    depth = 0
+    pos = start
+    while pos < len(xml):
+        open_at = xml.find(_DRAWING_OPEN, pos)
+        close_at = xml.find(_DRAWING_CLOSE, pos)
+        if close_at == -1:
+            return -1
+        if open_at != -1 and open_at < close_at:
+            depth += 1
+            pos = open_at + len(_DRAWING_OPEN)
+        else:
+            depth -= 1
+            pos = close_at + len(_DRAWING_CLOSE)
+            if depth == 0:
+                return pos
+    return -1
+
+
+def _unwrap_textboxes_once(xml: str) -> tuple[str, bool]:
+    """Replace every textbox drawing with its txbxContent paragraphs."""
+    result: list[str] = []
+    replaced = False
+    pos = 0
+    while pos < len(xml):
+        start = xml.find(_DRAWING_OPEN, pos)
+        if start == -1:
+            result.append(xml[pos:])
+            break
+        end = _find_drawing_end(xml, start)
+        if end == -1:
+            result.append(xml[pos:])
+            break
+        segment = xml[start:end]
+        open_at = segment.find(_TXBX_OPEN)
+        close_at = segment.rfind(_TXBX_CLOSE)
+        if open_at == -1 or close_at == -1:
+            result.append(xml[pos:end])
+            pos = end
+            continue
+        inner = segment[open_at + len(_TXBX_OPEN) : close_at]
+        result.append(xml[pos:start])
+        if inner.lstrip().startswith('<w:p'):
+            # close the surrounding run/paragraph, splice the paragraphs,
+            # then reopen so the remaining XML stays well-formed
+            result.append('</w:r></w:p>')
+            result.append(inner)
+            result.append('<w:p><w:r>')
+        else:
+            result.append(f'<w:p><w:r>{inner}</w:r></w:p>')
+        replaced = True
+        pos = end
+    return ''.join(result), replaced
+
+
+def _unwrap_textboxes(xml: str) -> str:
+    """Hoist textbox content so mammoth can see its runs and pictures.
+
+    mammoth ignores ``wps:txbx`` textboxes entirely, losing both the
+    text and any pictures anchored inside them (common in WPS-exported
+    documents). Nested textboxes are unwrapped repeatedly.
+    """
+    for _ in range(8):
+        if _TXBX_OPEN not in xml:
+            return xml
+        unwrapped, replaced = _unwrap_textboxes_once(xml)
+        if not replaced:
+            return xml
+        xml = unwrapped
+    return xml
+
+
+def _open_for_conversion(source: Path) -> BinaryIO:
+    """Open a docx package with textbox content hoisted for mammoth."""
+    with zipfile.ZipFile(source) as archive:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as copy:
+            for info in archive.infolist():
+                data = archive.read(info.filename)
+                if info.filename == 'word/document.xml':
+                    data = _unwrap_textboxes(data.decode('utf-8')).encode('utf-8')
+                copy.writestr(info.filename, data)
+        buffer.seek(0)
+        return buffer
+
+
 def _append_attachments(markdown: str, attachments: list[str], assets_dir: Path) -> str:
     """Append an appendix section linking the extracted embedded objects."""
     lines = ['## 附件', '']
@@ -117,7 +211,7 @@ def convert_docx(source: Path, output: Path) -> str:
     """
     assets_dir = assets_dir_for(output)
     counter = [0]
-    with source.open('rb') as stream:
+    with _open_for_conversion(source) as stream:
         result = mammoth.convert_to_html(
             stream, convert_image=mammoth.images.img_element(_image_handler(assets_dir, counter))
         )

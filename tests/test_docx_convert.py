@@ -65,7 +65,7 @@ PNG_1X1 = base64.b64decode(
 )
 
 DOCUMENT_OPEN = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="{W_NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+<w:document xmlns:w="{W_NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
   <w:body>'''
 
 DOCUMENT_CLOSE = """  </w:body>
@@ -199,3 +199,41 @@ def test_convert_tolerates_styles_without_type(tmp_path: Path) -> None:
     </w:p>"""
     markdown = convert_fixture(tmp_path, body)
     assert 'styled text' in markdown
+
+
+def test_convert_unwraps_textboxes(tmp_path: Path) -> None:
+    """Text and pictures inside textboxes are converted like body content.
+
+    mammoth ignores wps:txbx textboxes entirely; WPS documents anchor
+    pictures there.
+    """
+    picture = """<w:drawing><wp:inline><wp:extent cx="914400" cy="914400"/><a:graphic>
+      <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+        <pic:pic><pic:blipFill><a:blip r:embed="rId3"/></pic:blipFill></pic:pic>
+      </a:graphicData>
+    </a:graphic></wp:inline></w:drawing>"""
+    body = f"""
+    <w:p>
+      <w:r>
+        <w:drawing>
+          <wp:inline>
+            <a:graphic>
+              <a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+                <wps:wsp>
+                  <wps:txbx>
+                    <w:txbxContent>
+                      <w:p><w:r><w:t>textbox text</w:t></w:r></w:p>
+                      <w:p><w:r>{picture}</w:r></w:p>
+                    </w:txbxContent>
+                  </wps:txbx>
+                </wps:wsp>
+              </a:graphicData>
+            </a:graphic>
+          </wp:inline>
+        </w:drawing>
+      </w:r>
+    </w:p>"""
+    markdown = convert_fixture(tmp_path, body, {'word/media/image1.png': PNG_1X1})
+    assert 'textbox text' in markdown
+    assert (tmp_path / 'doc_files' / 'image1.png').is_file()
+    assert 'doc_files/image1.png' in markdown
