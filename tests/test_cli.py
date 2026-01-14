@@ -102,6 +102,13 @@ def make_docx(path: Path) -> Path:
     return path
 
 
+def make_html(path: Path, content: str = '<h1>Page</h1><p>body text</p>') -> Path:
+    """Create a real HTML file for direct conversion testing."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding='utf-8')
+    return path
+
+
 @pytest.fixture
 def fake_video(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Create a fake video file and stub out transcription."""
@@ -602,3 +609,76 @@ def test_cli_directory_docx_failure_cleans_assets(tmp_path: Path, monkeypatch: p
     assert 'Failed files:' in result.output
     assert not (src / 'bad.md').exists()
     assert not (src / 'bad_files').exists()
+
+
+def test_cli_html_writes_md(tmp_path: Path) -> None:
+    """An HTML file is converted into a .md next to it by default."""
+    src = make_html(tmp_path / 'page.html')
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    dst = src.with_suffix('.md')
+    assert dst.is_file()
+    assert '# Page' in dst.read_text(encoding='utf-8')
+    assert 'Loading model' not in result.output
+
+
+def test_cli_html_htm_extension(tmp_path: Path) -> None:
+    """The .htm extension works the same way."""
+    src = make_html(tmp_path / 'page.htm', '<h2>Heading</h2>')
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert src.with_suffix('.md').is_file()
+
+
+def test_cli_html_explicit_dst_is_used_as_is(tmp_path: Path) -> None:
+    """An explicit .md DST receives the Markdown content verbatim."""
+    src = make_html(tmp_path / 'page.html')
+    dst = tmp_path / 'out.md'
+    result = runner.invoke(app, [str(src), str(dst)])
+    assert result.exit_code == 0
+    content = dst.read_text(encoding='utf-8')
+    assert '# Page' in content
+    assert 'body text' in content
+
+
+def test_cli_html_rejects_non_md_dst(tmp_path: Path) -> None:
+    """An HTML DST with a non-.md extension fails with exit code 1."""
+    src = make_html(tmp_path / 'page.html')
+    dst = tmp_path / 'out.txt'
+    result = runner.invoke(app, [str(src), str(dst)])
+    assert result.exit_code == 1
+    assert 'use .md' in result.output
+
+
+def test_cli_html_empty_content(tmp_path: Path) -> None:
+    """Empty HTML produces an empty .md plus a 'no content detected' hint."""
+    src = make_html(tmp_path / 'blank.html', '<div></div>')
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert 'no content detected' in result.output
+    assert src.with_suffix('.md').read_text(encoding='utf-8') == ''
+
+
+def test_cli_directory_with_html(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """HTML files convert to .md in directory mode alongside other media."""
+    src = tmp_path / 'media'
+    make_video(src / 'a.mp4')
+    make_html(src / 'b.html')
+    monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert (src / 'a.srt').read_text(encoding='utf-8') == SRT_EXPECTED
+    assert '# Page' in (src / 'b.md').read_text(encoding='utf-8')
+    assert 'Loading model' in result.output
+
+
+def test_cli_directory_html_only_skips_model_hint(tmp_path: Path) -> None:
+    """An HTML-only directory does not print the ASR model loading hint."""
+    src = tmp_path / 'media'
+    make_html(src / 'a.html')
+    make_html(src / 'b.htm')
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert (src / 'a.md').is_file()
+    assert (src / 'b.md').is_file()
+    assert 'Loading model' not in result.output

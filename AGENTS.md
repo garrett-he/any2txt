@@ -6,8 +6,8 @@ Guidance for AI coding agents working in this repository.
 
 A Typer CLI (`any2txt`) that converts media files locally: video/audio
 to SRT subtitles (faster-whisper), images to plain text (RapidOCR), and
-docx documents to Markdown (mammoth + markdownify). See README.md for
-user facing docs; this file covers things agents need to know.
+docx/html documents to Markdown (mammoth + markdownify). See README.md
+for user facing docs; this file covers things agents need to know.
 
 ## Architecture
 
@@ -98,6 +98,9 @@ these layers, stop and reconsider.
 - docx conversion is the only path that receives the output path: it
   writes assets into `{output.stem}_files/` next to the output file.
   On failure, `cli.py` removes that directory as well as the output.
+- docx and html share the HTML-to-Markdown renderer in
+  `formats/markdown.py` (a `MarkdownConverter` subclass with table
+  support, since markdownify has none natively).
 
 ## Workflow expectations
 

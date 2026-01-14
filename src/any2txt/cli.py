@@ -10,9 +10,11 @@ import typer
 from any2txt import __version__
 from any2txt.asr.faster_whisper import transcribe
 from any2txt.docx import assets_dir_for, convert_docx
+from any2txt.formats.markdown import html_to_markdown
 from any2txt.formats.srt import DEFAULT_LINE_WIDTH, DEFAULT_MAX_LINES, format_srt
 from any2txt.media import is_supported
 from any2txt.media.docx import is_docx
+from any2txt.media.html import is_html
 from any2txt.media.image import is_image
 from any2txt.ocr import recognize
 from any2txt.text import HanVariant, convert_han
@@ -59,6 +61,15 @@ def _render_txt(source: Path, options: _Options) -> str:
     return text
 
 
+def _render_html(source: Path) -> str:
+    """Render one HTML file as Markdown."""
+    text = html_to_markdown(source.read_text(encoding='utf-8-sig')).strip('\n')
+    if not text.strip():
+        typer.echo('no content detected')
+        return ''
+    return text
+
+
 def _render(source: Path, output: Path, options: _Options) -> str:
     """Convert one media file to text, dispatching by media type."""
     if is_docx(source):
@@ -66,6 +77,8 @@ def _render(source: Path, output: Path, options: _Options) -> str:
         if not text:
             typer.echo('no content detected')
         return text
+    if is_html(source):
+        return _render_html(source)
     if is_image(source):
         return _render_txt(source, options)
     return _render_srt(source, options)
@@ -92,9 +105,14 @@ def _output_path(media: Path, src: Path, dst: Path | None, recursive: bool, suff
 
 def _output_suffix(media: Path) -> str:
     """Return the output file extension for one media file."""
-    if is_docx(media):
+    if is_docx(media) or is_html(media):
         return '.md'
     return '.txt' if is_image(media) else '.srt'
+
+
+def _needs_asr(media: Path) -> bool:
+    """Return True if a media file goes through the ASR pipeline."""
+    return not (is_image(media) or is_docx(media) or is_html(media))
 
 
 def _convert_directory(
@@ -125,7 +143,7 @@ def _convert_directory(
         for first, second in conflicts:
             typer.echo(f'  {first} and {second} both write {second.with_suffix(_output_suffix(second))}', err=True)
         return 1
-    if any(not (is_image(media) or is_docx(media)) for media, _ in jobs):
+    if any(_needs_asr(media) for media, _ in jobs):
         typer.echo('Loading model (first use of a model size downloads it)...')
     total = len(jobs)
     converted = skipped = 0
@@ -167,7 +185,7 @@ def main(
         HanVariant,
         typer.Option(
             '--han',
-            help='Chinese script variant of the output: auto (keep ASR output), simplified or traditional.',
+            help='Chinese script variant of the SRT/text output (not for docx/html): auto, simplified or traditional.',
         ),
     ] = HanVariant.AUTO,
     line_width: Annotated[
@@ -217,7 +235,7 @@ def main(
         typer.Option('--version', callback=_version_callback, is_eager=True),
     ] = False,
 ) -> None:
-    """Convert media files: video/audio to SRT, images to text, docx to Markdown.
+    """Convert media files: video/audio to SRT, images to text, docx/html to Markdown.
 
     SRC may be a media file or a directory of media files. With a
     directory, every file is converted next to it (or into DST when
@@ -243,7 +261,7 @@ def main(
         typer.echo(f'Error: unsupported output extension {dst.suffix!r}; use {suffix}', err=True)
         raise typer.Exit(1)
     output = dst if dst is not None else src.with_suffix(suffix)
-    if not (is_image(src) or is_docx(src)):
+    if _needs_asr(src):
         typer.echo('Loading model (first use of a model size downloads it)...')
     try:
         text = _render(src, output, options)

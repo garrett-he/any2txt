@@ -58,6 +58,7 @@ format.quote-style = "single"
 format.line-ending = "lf"
 lint.select = [ "A", "B", "C4", "D", "E", "F", "I", "N", "RUF", "SIM", "TC", "UP", "W" ]
 lint.per-file-ignores."src/any2txt/formats/srt.py" = [ "RUF001" ]
+lint.per-file-ignores."tests/test_docx_convert.py" = [ "E501" ]
 lint.per-file-ignores."tests/test_srt.py" = [ "RUF001" ]
 lint.pydocstyle.convention = "google"
 

@@ -2,19 +2,20 @@
 
 mammoth turns the document into semantic HTML (headings, lists,
 tables, links, emphasis); the rendering to Markdown lives in
-:mod:`any2txt.docx.markdown_render`. Images are written to an asset
+:mod:`any2txt.formats.markdown`. Images are written to an asset
 directory next to the output file instead of base64 data URIs; OLE
 embedded objects cannot be located inside the document flow, so they
 are extracted to the same directory and listed in an appendix section.
 """
 
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
+from typing import BinaryIO, Protocol
 
 import mammoth
 
-from any2txt.docx.markdown_render import html_to_markdown
+from any2txt.formats.markdown import html_to_markdown
 
 _CONTENT_TYPE_EXTENSIONS = {
     'image/bmp': 'bmp',
@@ -29,6 +30,16 @@ _CONTENT_TYPE_EXTENSIONS = {
 }
 
 
+class _MammothImage(Protocol):
+    """The subset of the mammoth image object used by the converter."""
+
+    content_type: str
+
+    def open(self) -> BinaryIO:
+        """Open the image data stream."""
+        ...
+
+
 def assets_dir_for(output: Path) -> Path:
     """Return the asset directory that accompanies one output file."""
     return output.parent / f'{output.stem}_files'
@@ -39,15 +50,15 @@ def _extension_for(content_type: str) -> str:
     return _CONTENT_TYPE_EXTENSIONS.get(content_type.split(';')[0].strip().lower(), 'bin')
 
 
-def _image_handler(assets_dir: Path, counter: list[int]) -> Callable[[object], dict[str, str]]:
+def _image_handler(assets_dir: Path, counter: list[int]) -> Callable[[_MammothImage], dict[str, str]]:
     """Build a mammoth image converter that writes images into assets_dir."""
 
-    def convert_image(image: object) -> dict[str, str]:
-        extension = _extension_for(str(getattr(image, 'content_type', '')))
+    def convert_image(image: _MammothImage) -> dict[str, str]:
+        extension = _extension_for(image.content_type)
         counter[0] += 1
         name = f'image{counter[0]}.{extension}'
         assets_dir.mkdir(parents=True, exist_ok=True)
-        with getattr(image, 'open')() as data:
+        with image.open() as data:
             (assets_dir / name).write_bytes(data.read())
         return {'src': f'{assets_dir.name}/{name}'}
 

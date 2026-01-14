@@ -5,8 +5,8 @@
 
 Transcribe video or audio files into SRT subtitles with local speech
 recognition (faster-whisper), recognize text in images with local OCR
-(RapidOCR), and convert Word documents into Markdown (mammoth +
-markdownify). No API key, no ffmpeg required.
+(RapidOCR), and convert Word documents and HTML pages into Markdown
+(mammoth + markdownify). No API key, no ffmpeg required.
 
 ## Install
 
@@ -68,14 +68,17 @@ any2txt doc.docx
 
 # Explicit output path for docx (must end with .md)
 any2txt doc.docx output.md
+
+# Convert an HTML page to Markdown; writes page.md next to the source
+any2txt page.html
 ```
 
 ### Directory mode
 
 When SRC is a directory, every supported media file found is converted:
 video and audio files become `{name}.srt`, images become `{name}.txt`,
-and Word documents become `{name}.md`. Without DST each output is
-written next to its source
+and Word documents and HTML pages become `{name}.md`. Without DST each
+output is written next to its source
 file; with DST it is written into that directory (mirroring
 subdirectories with `--recursive`). Existing outputs are skipped unless
 `--force` is given. One failing file does not stop the batch: failures
@@ -114,6 +117,9 @@ conflict on the same output path and are reported as an error.
   directory next to the output Markdown and referenced with relative
   paths; OLE objects cannot be located in the document flow, so they
   are listed in an appendix section at the end.
+- HTML conversion renders the page structure to Markdown with the same
+  engine as docx conversion (including tables); `--han` is not applied
+  to docx/html output.
 
 ## Development
 
