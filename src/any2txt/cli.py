@@ -19,8 +19,10 @@ from any2txt.media.docx import is_docx
 from any2txt.media.excel import is_excel
 from any2txt.media.html import is_html
 from any2txt.media.image import is_image
+from any2txt.media.pdf import is_pdf
 from any2txt.media.pptx import is_pptx
 from any2txt.ocr import recognize
+from any2txt.pdf import convert_pdf
 from any2txt.pptx import convert_pptx
 from any2txt.text import HanVariant, convert_han
 
@@ -87,6 +89,11 @@ def _render(source: Path, output: Path, options: _Options) -> str:
         if not text:
             typer.echo('no content detected')
         return text
+    if is_pdf(source):
+        text = convert_pdf(source, output)
+        if not text:
+            typer.echo('no content detected')
+        return text
     if is_html(source):
         return _render_html(source)
     if is_excel(source):
@@ -120,19 +127,21 @@ def _output_path(media: Path, src: Path, dst: Path | None, recursive: bool, suff
 
 def _output_suffix(media: Path) -> str:
     """Return the output file extension for one media file."""
-    if is_docx(media) or is_html(media) or is_pptx(media) or is_excel(media):
+    if is_docx(media) or is_html(media) or is_pptx(media) or is_excel(media) or is_pdf(media):
         return '.md'
     return '.txt' if is_image(media) else '.srt'
 
 
 def _needs_asr(media: Path) -> bool:
     """Return True if a media file goes through the ASR pipeline."""
-    return not (is_image(media) or is_docx(media) or is_html(media) or is_pptx(media) or is_excel(media))
+    return not (
+        is_image(media) or is_docx(media) or is_html(media) or is_pptx(media) or is_excel(media) or is_pdf(media)
+    )
 
 
 def _has_assets(media: Path) -> bool:
     """Return True if a media file extracts resources into an assets directory."""
-    return is_docx(media) or is_pptx(media)
+    return is_docx(media) or is_pptx(media) or is_pdf(media)
 
 
 def _convert_directory(

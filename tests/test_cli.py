@@ -164,7 +164,7 @@ def test_cli_source_not_found(tmp_path: Path) -> None:
 
 def test_cli_rejects_unsupported_media(tmp_path: Path) -> None:
     """An unsupported extension fails with exit code 1."""
-    src = tmp_path / 'notes.pdf'
+    src = tmp_path / 'notes.csv'
     src.write_text('not a media file')
     result = runner.invoke(app, [str(src)])
     assert result.exit_code == 1

@@ -13,6 +13,7 @@ from any2txt.media.docx import is_docx
 from any2txt.media.excel import is_excel
 from any2txt.media.html import is_html
 from any2txt.media.image import is_image
+from any2txt.media.pdf import is_pdf
 from any2txt.media.pptx import is_pptx
 from any2txt.media.video import is_video
 
@@ -22,7 +23,7 @@ __all__ = ['is_supported']
 def is_supported(path: Path) -> bool:
     """Return True if any registered media type claims the path's extension.
 
-    New media types (pdf, ...) plug in here.
+    New media types plug in here.
     """
     return (
         is_video(path)
@@ -32,4 +33,5 @@ def is_supported(path: Path) -> bool:
         or is_html(path)
         or is_pptx(path)
         or is_excel(path)
+        or is_pdf(path)
     )

@@ -6,9 +6,9 @@ Guidance for AI coding agents working in this repository.
 
 A Typer CLI (`any2txt`) that converts media files locally: video/audio
 to SRT subtitles (faster-whisper), images to plain text (RapidOCR), and
-docx/html/pptx/excel documents to Markdown (mammoth, markdownify,
-python-pptx, openpyxl). See README.md for user facing docs; this file
-covers things agents need to know.
+docx/html/pptx/excel/pdf documents to Markdown (mammoth, markdownify,
+python-pptx, openpyxl, PyMuPDF). See README.md for user facing docs;
+this file covers things agents need to know.
 
 ## Architecture
 
@@ -18,20 +18,28 @@ src/any2txt/
 ├── asr/                # speech recognition backends
 │   ├── base.py         # Segment dataclass: the contract between layers
 │   └── faster_whisper.py
-├── docx/               # docx to Markdown backend (mammoth + markdownify)
-│   ├── mammoth_docx.py # docx -> semantic HTML, asset extraction ({stem}_files/)
-│   └── markdown_render.py # HTML -> Markdown (MarkdownConverter subclass with tables)
-├── formats/            # output renderers (currently SRT only)
+├── docx/               # docx to Markdown backend (mammoth)
+│   └── mammoth_docx.py # docx -> semantic HTML, asset extraction ({stem}_files/)
+├── excel/              # excel to Markdown backend (openpyxl)
+│   └── openpyxl_excel.py # one ## section per sheet, grid as pipe table
+├── formats/            # pure text -> text output renderers
+│   ├── markdown.py     # shared HTML -> Markdown renderer (markdownify)
 │   └── srt.py
 ├── media/              # input handling, one module per media type
 │   ├── audio.py        # extension-based validation only
 │   ├── docx.py         # extension-based validation only
+│   ├── excel.py        # extension-based validation only
+│   ├── html.py         # extension-based validation only
 │   ├── image.py        # extension-based validation only
+│   ├── pdf.py          # extension-based validation only
+│   ├── pptx.py         # extension-based validation only
 │   └── video.py        # extension-based validation only
 ├── ocr/                # image text recognition backend (RapidOCR)
 │   └── rapid_ocr.py
 ├── excel/              # excel to Markdown backend (openpyxl)
 │   └── openpyxl_excel.py # one ## section per sheet, grid as pipe table
+├── pdf/                # pdf to Markdown backend (PyMuPDF)
+│   └── pymupdf_pdf.py  # font-size headings, tables, asset extraction ({stem}_files/)
 ├── pptx/               # pptx to Markdown backend (python-pptx)
 │   └── python_pptx.py  # slides -> sections, asset extraction ({stem}_files/)
 └── text/               # post-processing (han.py: script conversion)
@@ -106,9 +114,11 @@ these layers, stop and reconsider.
 - docx and html share the HTML-to-Markdown renderer in
   `formats/markdown.py` (a `MarkdownConverter` subclass with table
   support, since markdownify has none natively).
-- docx and pptx share the `{output.stem}_files/` asset-directory
+- docx, pptx, and pdf share the `{output.stem}_files/` asset-directory
   convention from `assets.py`; on failure, `cli.py` removes that
   directory as well as the output.
+- `pdf/pymupdf_pdf.py` infers headings from font sizes (PyMuPDF is
+  AGPL-3.0 licensed); heading thresholds live in `_HEADING_RATIOS`.
 
 ## Workflow expectations
 

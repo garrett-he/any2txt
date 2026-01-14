@@ -78,15 +78,18 @@ any2txt deck.pptx
 
 # Convert an Excel workbook to Markdown; each sheet becomes a h2 section
 any2txt book.xlsx
+
+# Convert a PDF to Markdown; headings are inferred from font sizes
+any2txt doc.pdf
 ```
 
 ### Directory mode
 
 When SRC is a directory, every supported media file found is converted:
 video and audio files become `{name}.srt`, images become `{name}.txt`,
-and Word documents, HTML pages, PowerPoint decks, and Excel workbooks
-become `{name}.md`. Without DST each output is written next to its
-source file; with DST it is written into that directory (mirroring
+and Word documents, HTML pages, PowerPoint decks, Excel workbooks, and
+PDFs become `{name}.md`. Without DST each output is written next to
+its source file; with DST it is written into that directory (mirroring
 subdirectories with `--recursive`). Existing outputs are skipped unless
 `--force` is given. One failing file does not stop the batch: failures
 are summarized at the end and the exit code is 1. Files sharing the
@@ -136,6 +139,12 @@ conflict on the same output path and are reported as an error.
   section with its grid as a Markdown table (first row is the header).
   Formula cells show their last computed value. `--han` is not applied
   to excel output.
+- PDF conversion infers headings from font sizes (body size is the
+  document-wide dominant size), renders ruled tables as Markdown
+  tables, extracts pictures into the `{name}_files/` directory, and
+  turns URI links into Markdown links. `--han` is not applied to pdf
+  output. PyMuPDF is licensed under AGPL-3.0; local personal use is
+  unaffected, but distributing this tool imposes AGPL obligations.
 
 ## Development
 
