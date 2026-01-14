@@ -86,6 +86,11 @@ def fake_convert_pptx(_source: Path, _output: Path) -> str:
     return '## Slide 1'
 
 
+def fake_convert_excel(_source: Path) -> str:
+    """Return fixed Markdown content."""
+    return '## Sheet'
+
+
 def make_video(path: Path) -> Path:
     """Create a fake video file."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -118,6 +123,13 @@ def make_pptx(path: Path) -> Path:
     """Create a fake pptx file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b'fake pptx data')
+    return path
+
+
+def make_excel(path: Path) -> Path:
+    """Create a fake excel file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b'fake excel data')
     return path
 
 
@@ -759,6 +771,64 @@ def test_cli_directory_pptx_only_skips_model_hint(tmp_path: Path, monkeypatch: p
     make_pptx(src / 'a.pptx')
     make_pptx(src / 'b.pptx')
     monkeypatch.setattr('any2txt.cli.convert_pptx', fake_convert_pptx)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert (src / 'a.md').is_file()
+    assert (src / 'b.md').is_file()
+    assert 'Loading model' not in result.output
+
+
+def test_cli_excel_writes_md(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An excel file is converted into a .md next to it by default."""
+    src = make_excel(tmp_path / 'book.xlsx')
+    monkeypatch.setattr('any2txt.cli.convert_excel', fake_convert_excel)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    dst = src.with_suffix('.md')
+    assert dst.is_file()
+    assert dst.read_text(encoding='utf-8') == '## Sheet'
+    assert 'Loading model' not in result.output
+
+
+def test_cli_excel_rejects_non_md_dst(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An excel DST with a non-.md extension fails with exit code 1."""
+    src = make_excel(tmp_path / 'book.xlsx')
+    dst = tmp_path / 'out.txt'
+    monkeypatch.setattr('any2txt.cli.convert_excel', fake_convert_excel)
+    result = runner.invoke(app, [str(src), str(dst)])
+    assert result.exit_code == 1
+    assert 'use .md' in result.output
+
+
+def test_cli_excel_uppercase_extension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Excel extension matching is case-insensitive."""
+    src = make_excel(tmp_path / 'BOOK.XLSX')
+    monkeypatch.setattr('any2txt.cli.convert_excel', fake_convert_excel)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert src.with_suffix('.md').is_file()
+
+
+def test_cli_directory_with_excel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Excel files convert to .md in directory mode alongside other media."""
+    src = tmp_path / 'media'
+    make_video(src / 'a.mp4')
+    make_excel(src / 'b.xlsx')
+    monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe)
+    monkeypatch.setattr('any2txt.cli.convert_excel', fake_convert_excel)
+    result = runner.invoke(app, [str(src)])
+    assert result.exit_code == 0
+    assert (src / 'a.srt').read_text(encoding='utf-8') == SRT_EXPECTED
+    assert (src / 'b.md').read_text(encoding='utf-8') == '## Sheet'
+    assert 'Loading model' in result.output
+
+
+def test_cli_directory_excel_only_skips_model_hint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An excel-only directory does not print the ASR model loading hint."""
+    src = tmp_path / 'media'
+    make_excel(src / 'a.xlsx')
+    make_excel(src / 'b.xlsm')
+    monkeypatch.setattr('any2txt.cli.convert_excel', fake_convert_excel)
     result = runner.invoke(app, [str(src)])
     assert result.exit_code == 0
     assert (src / 'a.md').is_file()

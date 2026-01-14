@@ -75,15 +75,18 @@ any2txt page.html
 
 # Convert a PowerPoint deck to Markdown; writes deck.md next to the source
 any2txt deck.pptx
+
+# Convert an Excel workbook to Markdown; each sheet becomes a h2 section
+any2txt book.xlsx
 ```
 
 ### Directory mode
 
 When SRC is a directory, every supported media file found is converted:
 video and audio files become `{name}.srt`, images become `{name}.txt`,
-and Word documents, HTML pages, and PowerPoint decks become
-`{name}.md`. Without DST each output is written next to its source
-file; with DST it is written into that directory (mirroring
+and Word documents, HTML pages, PowerPoint decks, and Excel workbooks
+become `{name}.md`. Without DST each output is written next to its
+source file; with DST it is written into that directory (mirroring
 subdirectories with `--recursive`). Existing outputs are skipped unless
 `--force` is given. One failing file does not stop the batch: failures
 are summarized at the end and the exit code is 1. Files sharing the
@@ -129,6 +132,10 @@ conflict on the same output path and are reported as an error.
   tables become Markdown tables, speaker notes become blockquotes, and
   pictures are extracted into the `{name}_files/` directory like docx.
   `--han` is not applied to pptx output.
+- Excel conversion renders each non-empty sheet as a `## {sheet name}`
+  section with its grid as a Markdown table (first row is the header).
+  Formula cells show their last computed value. `--han` is not applied
+  to excel output.
 
 ## Development
 

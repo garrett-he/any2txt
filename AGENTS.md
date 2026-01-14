@@ -6,9 +6,9 @@ Guidance for AI coding agents working in this repository.
 
 A Typer CLI (`any2txt`) that converts media files locally: video/audio
 to SRT subtitles (faster-whisper), images to plain text (RapidOCR), and
-docx/html/pptx documents to Markdown (mammoth, markdownify,
-python-pptx). See README.md for user facing docs; this file covers
-things agents need to know.
+docx/html/pptx/excel documents to Markdown (mammoth, markdownify,
+python-pptx, openpyxl). See README.md for user facing docs; this file
+covers things agents need to know.
 
 ## Architecture
 
@@ -30,6 +30,8 @@ src/any2txt/
 │   └── video.py        # extension-based validation only
 ├── ocr/                # image text recognition backend (RapidOCR)
 │   └── rapid_ocr.py
+├── excel/              # excel to Markdown backend (openpyxl)
+│   └── openpyxl_excel.py # one ## section per sheet, grid as pipe table
 ├── pptx/               # pptx to Markdown backend (python-pptx)
 │   └── python_pptx.py  # slides -> sections, asset extraction ({stem}_files/)
 └── text/               # post-processing (han.py: script conversion)

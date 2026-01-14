@@ -11,10 +11,12 @@ from any2txt import __version__
 from any2txt.asr.faster_whisper import transcribe
 from any2txt.assets import assets_dir_for
 from any2txt.docx import convert_docx
+from any2txt.excel import convert_excel
 from any2txt.formats.markdown import html_to_markdown
 from any2txt.formats.srt import DEFAULT_LINE_WIDTH, DEFAULT_MAX_LINES, format_srt
 from any2txt.media import is_supported
 from any2txt.media.docx import is_docx
+from any2txt.media.excel import is_excel
 from any2txt.media.html import is_html
 from any2txt.media.image import is_image
 from any2txt.media.pptx import is_pptx
@@ -87,6 +89,11 @@ def _render(source: Path, output: Path, options: _Options) -> str:
         return text
     if is_html(source):
         return _render_html(source)
+    if is_excel(source):
+        text = convert_excel(source)
+        if not text:
+            typer.echo('no content detected')
+        return text
     if is_image(source):
         return _render_txt(source, options)
     return _render_srt(source, options)
@@ -113,14 +120,14 @@ def _output_path(media: Path, src: Path, dst: Path | None, recursive: bool, suff
 
 def _output_suffix(media: Path) -> str:
     """Return the output file extension for one media file."""
-    if is_docx(media) or is_html(media) or is_pptx(media):
+    if is_docx(media) or is_html(media) or is_pptx(media) or is_excel(media):
         return '.md'
     return '.txt' if is_image(media) else '.srt'
 
 
 def _needs_asr(media: Path) -> bool:
     """Return True if a media file goes through the ASR pipeline."""
-    return not (is_image(media) or is_docx(media) or is_html(media) or is_pptx(media))
+    return not (is_image(media) or is_docx(media) or is_html(media) or is_pptx(media) or is_excel(media))
 
 
 def _has_assets(media: Path) -> bool:
@@ -248,7 +255,7 @@ def main(
         typer.Option('--version', callback=_version_callback, is_eager=True),
     ] = False,
 ) -> None:
-    """Convert media files: video/audio to SRT, images to text, docx/html/pptx to Markdown.
+    """Convert media files: video/audio to SRT, images to text, documents to Markdown.
 
     SRC may be a media file or a directory of media files. With a
     directory, every file is converted next to it (or into DST when
