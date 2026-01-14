@@ -86,7 +86,7 @@ def fake_convert_pptx(_source: Path, _output: Path) -> str:
     return '## Slide 1'
 
 
-def fake_convert_excel(_source: Path) -> str:
+def fake_convert_excel(_source: Path, _output: Path) -> str:
     """Return fixed Markdown content."""
     return '## Sheet'
 

@@ -140,8 +140,10 @@ conflict on the same output path and are reported as an error.
   `--han` is not applied to pptx output.
 - Excel conversion renders each non-empty sheet as a `## {sheet name}`
   section with its grid as a Markdown table (first row is the header).
-  Formula cells show their last computed value. `--han` is not applied
-  to excel output.
+  Merged cells repeat their top-left value on every row, and embedded
+  pictures are extracted into the `{name}_files/` directory and
+  referenced inside their anchored cell. Formula cells show their last
+  computed value. `--han` is not applied to excel output.
 - PDF conversion infers headings from font sizes (body size is the
   document-wide dominant size), renders ruled tables as Markdown
   tables, extracts pictures into the `{name}_files/` directory, and

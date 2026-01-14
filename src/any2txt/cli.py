@@ -99,7 +99,7 @@ def _render(source: Path, output: Path, options: _Options) -> str:
     if is_html(source):
         return _render_html(source, output)
     if is_excel(source):
-        text = convert_excel(source)
+        text = convert_excel(source, output)
         if not text:
             typer.echo('no content detected')
         return text
@@ -143,7 +143,7 @@ def _needs_asr(media: Path) -> bool:
 
 def _has_assets(media: Path) -> bool:
     """Return True if a media file extracts resources into an assets directory."""
-    return is_docx(media) or is_html(media) or is_pptx(media) or is_pdf(media)
+    return is_docx(media) or is_html(media) or is_pptx(media) or is_pdf(media) or is_excel(media)
 
 
 def _convert_directory(

@@ -7,7 +7,7 @@ or external tools are required.
 import base64
 from pathlib import Path
 
-import fitz
+import pymupdf as fitz
 
 from any2txt.pdf import convert_pdf
 

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-import fitz
+import pymupdf as fitz
 
 from any2txt.assets import assets_dir_for
 
