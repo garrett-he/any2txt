@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.oxml.ns import qn
 from pptx.util import Inches
 
 from any2txt.pptx import convert_pptx
@@ -79,6 +81,40 @@ def test_convert_picture_extracts_to_assets(tmp_path: Path) -> None:
     assert len(pictures) == 1
     assert pictures[0].read_bytes() == PNG_1X1
     assert 'deck_files/slide2_image1.png' in markdown
+
+
+def test_convert_skips_linked_only_picture(tmp_path: Path) -> None:
+    """A picture linked to an external file (no embedded bits) is skipped."""
+    source = build_deck(tmp_path / 'deck.pptx')
+    presentation = Presentation(str(source))
+    picture = next(shape for shape in presentation.slides[1].shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE)
+    blip_fill = picture._element.find(qn('p:blipFill'))
+    assert blip_fill is not None
+    blip = blip_fill.find(qn('a:blip'))
+    assert blip is not None
+    del blip.attrib[qn('r:embed')]
+    linked = tmp_path / 'linked.pptx'
+    presentation.save(str(linked))
+    markdown = convert_pptx(linked, tmp_path / 'linked.md')
+    assert '## Slide 2' in markdown
+    assert 'slide2_image' not in markdown
+
+
+def test_convert_skips_unrecognized_image_part(tmp_path: Path) -> None:
+    """A picture whose rel points to a non-image part is skipped."""
+    source = build_deck(tmp_path / 'deck.pptx')
+    presentation = Presentation(str(source))
+    picture = next(shape for shape in presentation.slides[1].shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE)
+    blip_fill = picture._element.find(qn('p:blipFill'))
+    assert blip_fill is not None
+    blip = blip_fill.find(qn('a:blip'))
+    assert blip is not None
+    blip.set(qn('r:embed'), 'rId1')
+    repointed = tmp_path / 'repointed.pptx'
+    presentation.save(str(repointed))
+    markdown = convert_pptx(repointed, tmp_path / 'repointed.md')
+    assert '## Slide 2' in markdown
+    assert 'slide2_image' not in markdown
 
 
 def test_convert_notes_as_blockquote(tmp_path: Path) -> None:

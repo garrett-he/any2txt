@@ -71,10 +71,18 @@ def _render_table(shape: GraphicFrame) -> list[str]:
     return lines
 
 
-def _render_picture(shape: Picture, number: int, assets_dir: Path, counter: list[int]) -> str:
-    """Extract a slide picture into assets_dir and reference it."""
+def _render_picture(shape: Picture, number: int, assets_dir: Path, counter: list[int]) -> str | None:
+    """Extract a slide picture into assets_dir and reference it.
+
+    Returns None for pictures python-pptx cannot decode: linked-only
+    pictures ("link to file", ValueError) and images stored in a format
+    python-pptx does not recognize, e.g. ``image/unknown`` (AttributeError).
+    """
+    try:
+        image = shape.image
+    except (ValueError, AttributeError):
+        return None
     counter[0] += 1
-    image = shape.image
     name = f'slide{number}_image{counter[0]}.{image.ext}'
     assets_dir.mkdir(parents=True, exist_ok=True)
     (assets_dir / name).write_bytes(image.blob)
@@ -97,7 +105,8 @@ def _render_shape(
     if isinstance(shape, GraphicFrame) and shape.has_table:
         return _render_table(shape)
     if isinstance(shape, Picture):
-        return [_render_picture(shape, number, assets_dir, counter)]
+        picture = _render_picture(shape, number, assets_dir, counter)
+        return [picture] if picture is not None else []
     if isinstance(shape, Shape) and shape is not title_shape:
         # body placeholders are bulleted by default in PowerPoint layouts
         return _render_paragraphs(shape.text_frame, shape.is_placeholder)
