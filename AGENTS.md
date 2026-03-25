@@ -104,8 +104,8 @@ these layers, stop and reconsider.
   backslashes but Python code must stay portable.
 - The packaged entry point is `any2txt.cli:app` with a single Typer
   command, so Typer treats it as the root command (no subcommand name).
-- `--han` uses a StrEnum; `convert_han` takes the enum, not a string.
-  It applies to SRT and OCR output, not to docx conversion.
+- `--text-han` uses a StrEnum; `convert_han` takes the enum, not a string.
+  It applies to SRT and OCR output, not to document formats.
 - Time math in `formats/srt.py` uses display width (full-width = 2);
   `\n` counts as 0. Keep that consistent when editing wrap/split logic.
 - docx conversion is the only path that receives the output path: it

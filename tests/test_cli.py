@@ -264,30 +264,30 @@ def test_cli_directory_failure_removes_partial_output(tmp_path: Path, monkeypatc
 
 
 def test_cli_line_width_splits_segments(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """--line-width wraps lines; over-long segments split into timed cues."""
+    """--srt-line-width wraps lines; over-long segments split into timed cues."""
     src = make_video(tmp_path / 'video.mp4')
     monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe_long)
-    result = runner.invoke(app, [str(src), '--line-width', '10'])
+    result = runner.invoke(app, [str(src), '--srt-line-width', '10'])
     assert result.exit_code == 0
     dst = src.with_suffix('.srt')
     expected = '1\n00:00:00,000 --> 00:00:03,750\nalpha beta\ngamma\n\n2\n00:00:03,750 --> 00:00:05,000\ndelta'
     assert dst.read_text(encoding='utf-8') == expected
 
 
-def test_cli_han_simplified(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """--han simplified converts the transcript to simplified Chinese."""
+def test_cli_text_han_simplified(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--text-han simplified converts the transcript to simplified Chinese."""
     src = make_video(tmp_path / 'video.mp4')
     monkeypatch.setattr('any2txt.cli.transcribe', fake_transcribe_traditional)
-    result = runner.invoke(app, [str(src), '--han', 'simplified'])
+    result = runner.invoke(app, [str(src), '--text-han', 'simplified'])
     assert result.exit_code == 0
     dst = src.with_suffix('.srt')
     expected = '1\n00:00:00,000 --> 00:00:02,000\n简体中文与繁体中文'
     assert dst.read_text(encoding='utf-8') == expected
 
 
-def test_cli_han_rejects_invalid_value(fake_video: Path) -> None:
-    """An invalid --han value fails with a usage error."""
-    result = runner.invoke(app, [str(fake_video), '--han', 'klingon'])
+def test_cli_text_han_rejects_invalid_value(fake_video: Path) -> None:
+    """An invalid --text-han value fails with a usage error."""
+    result = runner.invoke(app, [str(fake_video), '--text-han', 'klingon'])
     assert result.exit_code != 0
 
 
@@ -478,11 +478,11 @@ def test_cli_image_empty_result_writes_empty_txt(tmp_path: Path, monkeypatch: py
     assert src.with_suffix('.txt').read_text(encoding='utf-8') == ''
 
 
-def test_cli_image_han_simplified(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """--han simplified converts the OCR output to simplified Chinese."""
+def test_cli_image_text_han_simplified(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--text-han simplified converts the OCR output to simplified Chinese."""
     src = make_image(tmp_path / 'photo.png')
     monkeypatch.setattr('any2txt.cli.recognize', fake_recognize_traditional)
-    result = runner.invoke(app, [str(src), '--han', 'simplified'])
+    result = runner.invoke(app, [str(src), '--text-han', 'simplified'])
     assert result.exit_code == 0
     assert src.with_suffix('.txt').read_text(encoding='utf-8') == '简体中文与繁体中文'
 

@@ -36,13 +36,13 @@ any2txt song.mp3
 any2txt video.mp4 output.srt
 
 # Convert the transcript to simplified Chinese
-any2txt video.mp4 --han simplified
+any2txt video.mp4 --text-han simplified
 
 # Pick a bigger model and pin the language
-any2txt video.mp4 --model small --language zh
+any2txt video.mp4 --asr-model small --asr-language zh
 
 # Custom line width and lines per cue
-any2txt video.mp4 --line-width 42 --max-lines 2
+any2txt video.mp4 --srt-line-width 42 --srt-max-lines 2
 
 # Convert every media file in a directory; each .srt lands next to its source
 any2txt videos/
@@ -61,8 +61,8 @@ any2txt photo.png
 # Explicit output path for images (must end with .txt)
 any2txt photo.png output.txt
 
-# OCR output also honors --han (simplified/traditional Chinese)
-any2txt photo.png --han simplified
+# OCR output also honors --text-han (simplified/traditional Chinese)
+any2txt photo.png --text-han simplified
 
 # Convert a Word document to Markdown; writes doc.md next to the source
 any2txt doc.docx
@@ -100,11 +100,11 @@ conflict on the same output path and are reported as an error.
 
 | Option              | Default     | Description                                                        |
 | ------------------- | ----------- | ------------------------------------------------------------------ |
-| `--han`             | `auto`      | Chinese script variant: `auto`, `simplified`, `traditional`        |
-| `--line-width`      | `42`        | Max display width per line; full-width chars count as 2            |
-| `--max-lines`       | `2`         | Max lines per cue; longer segments split into multiple timed cues  |
-| `--model`           | `base`      | Whisper model size (`tiny`, `base`, `small`, `medium`, ...)        |
-| `--language`        | auto-detect | ISO language code of the audio (e.g. `zh`)                         |
+| `--text-han`        | `auto`      | Chinese script variant: `auto`, `simplified`, `traditional`        |
+| `--srt-line-width`  | `42`        | Max display width per line; full-width chars count as 2            |
+| `--srt-max-lines`   | `2`         | Max lines per cue; longer segments split into multiple timed cues  |
+| `--asr-model`       | `base`      | Whisper model size (`tiny`, `base`, `small`, `medium`, ...)        |
+| `--asr-language`    | auto-detect | ISO language code of the audio (e.g. `zh`)                         |
 | `-r`, `--recursive` | off         | Also process files in subdirectories (directory mode)              |
 | `-f`, `--force`     | off         | Re-convert files whose output already exists (directory mode)       |
 | `--version`         |             | Print the version and exit                                         |
@@ -122,7 +122,7 @@ conflict on the same output path and are reported as an error.
   top-to-bottom; images without detectable text produce an empty `.txt`.
 - docx conversion keeps the document's semantic structure (headings,
   emphasis, lists, links, tables); visual styling (fonts, colors, sizes)
-  is not preserved. `--han` is not applied to docx output.
+  is not preserved. `--text-han` is not applied to docx output.
 - Embedded images and OLE objects are extracted into a `{name}_files/`
   directory next to the output Markdown and referenced with relative
   paths; OLE objects cannot be located in the document flow, so they
@@ -131,23 +131,23 @@ conflict on the same output path and are reported as an error.
   engine as docx conversion (including tables). Images referenced by
   local paths are copied into the `{name}_files/` directory next to the
   output and referenced with relative paths; remote URLs, data URIs,
-  and missing files are left untouched. `--han` is not applied to
+  and missing files are left untouched. `--text-han` is not applied to
   docx/html output.
 - PowerPoint conversion renders each slide as a `##` section: the slide
   title becomes the heading, body placeholders become bullet lists,
   tables become Markdown tables, speaker notes become blockquotes, and
   pictures are extracted into the `{name}_files/` directory like docx.
-  `--han` is not applied to pptx output.
+  `--text-han` is not applied to pptx output.
 - Excel conversion renders each non-empty sheet as a `## {sheet name}`
   section with its grid as a Markdown table (first row is the header).
   Merged cells repeat their top-left value on every row, and embedded
   pictures are extracted into the `{name}_files/` directory and
   referenced inside their anchored cell. Formula cells show their last
-  computed value. `--han` is not applied to excel output.
+  computed value. `--text-han` is not applied to excel output.
 - PDF conversion infers headings from font sizes (body size is the
   document-wide dominant size), renders ruled tables as Markdown
   tables, extracts pictures into the `{name}_files/` directory, and
-  turns URI links into Markdown links. `--han` is not applied to pdf
+  turns URI links into Markdown links. `--text-han` is not applied to pdf
   output. PyMuPDF is licensed under AGPL-3.0; local personal use is
   unaffected, but distributing this tool imposes AGPL obligations.
 

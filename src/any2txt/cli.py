@@ -40,21 +40,21 @@ def _version_callback(value: bool) -> None:
 class _Options:
     """Conversion options shared by single-file and directory modes."""
 
-    han: HanVariant
-    line_width: int
-    max_lines: int
-    model: str
-    language: str | None
+    text_han: HanVariant
+    srt_line_width: int
+    srt_max_lines: int
+    asr_model: str
+    asr_language: str | None
 
 
 def _render_srt(source: Path, options: _Options) -> str:
     """Transcribe one media file and return its rendered SRT text."""
     text = format_srt(
-        transcribe(source, model_size=options.model, language=options.language),
-        line_width=options.line_width,
-        max_lines=options.max_lines,
+        transcribe(source, model_size=options.asr_model, language=options.asr_language),
+        line_width=options.srt_line_width,
+        max_lines=options.srt_max_lines,
     )
-    text = convert_han(text, options.han)
+    text = convert_han(text, options.text_han)
     if not text:
         typer.echo('no speech detected')
     return text
@@ -62,7 +62,7 @@ def _render_srt(source: Path, options: _Options) -> str:
 
 def _render_txt(source: Path, options: _Options) -> str:
     """Recognize one image file and return its plain text."""
-    text = convert_han(recognize(source), options.han)
+    text = convert_han(recognize(source), options.text_han)
     if not text:
         typer.echo('no text detected')
     return text
@@ -212,46 +212,47 @@ def main(
         Path | None,
         typer.Argument(help='Output .txt or .srt path (file mode) or output directory (directory mode).'),
     ] = None,
-    han: Annotated[
+    text_han: Annotated[
         HanVariant,
         typer.Option(
-            '--han',
-            help='Chinese script variant of the SRT/text output (not for docx/html): auto, simplified or traditional.',
+            '--text-han',
+            help='Chinese script variant of SRT/text output (ignored for document formats): auto, '
+            'simplified or traditional.',
         ),
     ] = HanVariant.AUTO,
-    line_width: Annotated[
+    srt_line_width: Annotated[
         int,
         typer.Option(
-            '--line-width',
+            '--srt-line-width',
             min=1,
             help='Maximum display width per subtitle line; full-width chars count as 2.',
         ),
     ] = DEFAULT_LINE_WIDTH,
-    max_lines: Annotated[
+    srt_max_lines: Annotated[
         int,
         typer.Option(
-            '--max-lines',
+            '--srt-max-lines',
             min=1,
             help='Maximum lines per subtitle cue; longer segments are split into multiple cues.',
         ),
     ] = DEFAULT_MAX_LINES,
-    model: Annotated[
+    asr_model: Annotated[
         str,
         typer.Option(
-            '--model',
+            '--asr-model',
             help='Whisper model size (tiny, base, small, medium, ...); first use downloads it.',
         ),
     ] = 'base',
-    language: Annotated[
+    asr_language: Annotated[
         str | None,
         typer.Option(
-            '--language',
+            '--asr-language',
             help='ISO language code of the audio (e.g. zh); omitted means auto-detect.',
         ),
     ] = None,
     recursive: Annotated[
         bool,
-        typer.Option('--recursive', '-r', help='Process videos in subdirectories as well.'),
+        typer.Option('--recursive', '-r', help='Process media files in subdirectories as well.'),
     ] = False,
     force: Annotated[
         bool,
@@ -273,11 +274,11 @@ def main(
     given); ``--force`` re-converts files whose output exists.
     """
     options = _Options(
-        han=han,
-        line_width=line_width,
-        max_lines=max_lines,
-        model=model,
-        language=language,
+        text_han=text_han,
+        srt_line_width=srt_line_width,
+        srt_max_lines=srt_max_lines,
+        asr_model=asr_model,
+        asr_language=asr_language,
     )
     if src.is_dir():
         raise typer.Exit(_convert_directory(src, dst, options, recursive, force))
