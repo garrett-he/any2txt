@@ -8,6 +8,7 @@ import base64
 import zipfile
 from pathlib import Path
 
+from any2txt.assets import DataUriSink, DirSink, DropSink
 from any2txt.docx import convert_docx
 
 W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
@@ -93,7 +94,7 @@ def build_docx(path: Path, body: str, extras: dict[str, bytes] | None = None) ->
 def convert_fixture(tmp_path: Path, body: str, extras: dict[str, bytes] | None = None) -> str:
     """Build a docx fixture, convert it, and return the Markdown."""
     source = build_docx(tmp_path / 'doc.docx', body, extras)
-    return convert_docx(source, tmp_path / 'doc.md')
+    return convert_docx(source, DirSink(tmp_path / 'doc_files'))
 
 
 def test_convert_headings_and_emphasis(tmp_path: Path) -> None:
@@ -144,9 +145,7 @@ def test_convert_hyperlink(tmp_path: Path) -> None:
     assert '[link text](https://example.com)' in markdown
 
 
-def test_convert_image_extracts_to_assets(tmp_path: Path) -> None:
-    """Inline images are written into the assets directory and referenced."""
-    body = """
+IMAGE_BODY = """
     <w:p>
       <w:r>
         <w:drawing>
@@ -165,11 +164,32 @@ def test_convert_image_extracts_to_assets(tmp_path: Path) -> None:
         </w:drawing>
       </w:r>
     </w:p>"""
-    markdown = convert_fixture(tmp_path, body, {'word/media/image1.png': PNG_1X1})
+
+
+def test_convert_image_extracts_to_assets(tmp_path: Path) -> None:
+    """Inline images are written into the assets directory and referenced."""
+    markdown = convert_fixture(tmp_path, IMAGE_BODY, {'word/media/image1.png': PNG_1X1})
     assets = tmp_path / 'doc_files'
     assert (assets / 'image1.png').is_file()
     assert (assets / 'image1.png').read_bytes() == PNG_1X1
     assert 'doc_files/image1.png' in markdown
+
+
+def test_convert_image_embeds_data_uri(tmp_path: Path) -> None:
+    """Embed mode inlines the image and writes nothing to disk."""
+    source = build_docx(tmp_path / 'doc.docx', IMAGE_BODY, {'word/media/image1.png': PNG_1X1})
+    markdown = convert_docx(source, DataUriSink())
+    assert '](data:image/png;base64,' in markdown
+    assert base64.b64encode(PNG_1X1).decode('ascii') in markdown
+    assert not (tmp_path / 'doc_files').exists()
+
+
+def test_convert_image_dropped(tmp_path: Path) -> None:
+    """Drop mode leaves no image reference and writes nothing to disk."""
+    source = build_docx(tmp_path / 'doc.docx', IMAGE_BODY, {'word/media/image1.png': PNG_1X1})
+    markdown = convert_docx(source, DropSink())
+    assert '![' not in markdown
+    assert not (tmp_path / 'doc_files').exists()
 
 
 def test_convert_embeddings_appends_attachments(tmp_path: Path) -> None:
@@ -183,6 +203,18 @@ def test_convert_embeddings_appends_attachments(tmp_path: Path) -> None:
     assert (assets / 'oleObject1.bin').read_bytes() == b'embedded data'
     assert '## 附件' in markdown
     assert '[oleObject1.bin](doc_files/oleObject1.bin)' in markdown
+
+
+def test_convert_embeddings_dropped_in_embed_mode(tmp_path: Path) -> None:
+    """OLE objects cannot be data URIs, so embed mode omits the appendix."""
+    source = build_docx(
+        tmp_path / 'doc.docx',
+        '<w:p><w:r><w:t>hello</w:t></w:r></w:p>',
+        {'word/embeddings/oleObject1.bin': b'embedded data'},
+    )
+    markdown = convert_docx(source, DataUriSink())
+    assert '## 附件' not in markdown
+    assert not (tmp_path / 'doc_files').exists()
 
 
 def test_convert_empty_document(tmp_path: Path) -> None:

@@ -33,6 +33,10 @@ ci:
 build:
     uv build
 
+# Build the release artifacts (exe, dependency archive, model archive)
+release:
+    uv run python packaging/build_release.py
+
 # Publish the project
 publish:
     uv publish

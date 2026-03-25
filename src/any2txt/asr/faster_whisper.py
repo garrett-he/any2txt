@@ -7,14 +7,34 @@ from pathlib import Path
 from faster_whisper import WhisperModel
 
 from any2txt.asr.base import Segment
+from any2txt.runtime import models_dir
 
 DEFAULT_MODEL_SIZE = 'base'
+
+
+def _resolve_model(model_size: str) -> str:
+    """Return the local model directory for a packaged build, or the model name.
+
+    Packaged builds look for ``models/<size>`` next to the executable and
+    refuse to download when it is missing. Source runs return the name
+    unchanged so faster-whisper uses the standard Hugging Face cache. An
+    explicit directory path in ``model_size`` is passed through either way.
+    """
+    models = models_dir()
+    if models is None:
+        return model_size
+    local = models / model_size
+    if local.is_dir():
+        return str(local)
+    raise FileNotFoundError(
+        f'model {model_size!r} not found under {models}; extract the models archive or pass a model directory'
+    )
 
 
 @lru_cache(maxsize=4)
 def _load_model(model_size: str) -> WhisperModel:
     """Load and cache a CPU int8 WhisperModel by size."""
-    return WhisperModel(model_size, device='cpu', compute_type='int8')
+    return WhisperModel(_resolve_model(model_size), device='cpu', compute_type='int8')
 
 
 def transcribe(

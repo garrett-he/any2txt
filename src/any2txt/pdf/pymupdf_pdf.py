@@ -10,16 +10,21 @@ Markdown links. Following docx conversion rules, no script conversion
 is applied.
 """
 
+import mimetypes
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
 import pymupdf as fitz
 
-from any2txt.assets import assets_dir_for
+from any2txt.assets import AssetSink
 
 _HEADING_RATIOS = ((1.6, '#'), (1.3, '##'), (1.15, '###'))
 _MAX_HEADING_LENGTH = 120
+
+# Image formats every Markdown renderer accepts; anything else (CCITT,
+# JBIG2, JPEG 2000) is re-encoded as PNG before it leaves the converter.
+_WEB_IMAGE_EXTENSIONS = frozenset({'png', 'jpeg', 'gif', 'webp'})
 
 # PyMuPDF text-extraction dictionaries (block/line/span) have string keys.
 type SpanDict = dict[str, Any]
@@ -172,6 +177,17 @@ def _inside_any(x: float, y: float, tables: list[_Table]) -> bool:
     return any(table.x <= x and y <= table.y for table in tables)
 
 
+def _normalized_image(doc: fitz.Document, xref: int, extracted: dict[str, Any]) -> tuple[str, bytes]:
+    """Return (extension, bytes) using PNG for formats renderers reject."""
+    extension = str(extracted['ext']).lower()
+    if extension in _WEB_IMAGE_EXTENSIONS:
+        return extension, extracted['image']
+    try:
+        return 'png', fitz.Pixmap(doc, xref).tobytes('png')
+    except (RuntimeError, ValueError):
+        return extension, extracted['image']
+
+
 def _collect_page(page: fitz.Page, doc: fitz.Document) -> _PageData:
     """Collect the renderable content of one page."""
     text_dict = cast('dict[str, Any]', page.get_text('dict'))
@@ -184,12 +200,13 @@ def _collect_page(page: fitz.Page, doc: fitz.Document) -> _PageData:
         data.tables.append(_Table(y=bbox[3], x=bbox[0], rows=rows))
     for info in page.get_images(full=True):
         extracted = doc.extract_image(info[0])
+        extension, payload = _normalized_image(doc, info[0], extracted)
         for rect in page.get_image_rects(info[0]):
-            data.images.append(_Image(y=rect.y1, x=rect.x0, ext=extracted['ext'], data=extracted['image']))
+            data.images.append(_Image(y=rect.y1, x=rect.x0, ext=extension, data=payload))
     return data
 
 
-def _render_page(data: _PageData, number: int, assets_dir: Path, counter: list[int], body: float) -> list[str]:
+def _render_page(data: _PageData, number: int, sink: AssetSink, counter: list[int], body: float) -> list[str]:
     """Render one page's content in reading order."""
     elements: list[tuple[float, float, str]] = []
     for block in data.blocks:
@@ -209,28 +226,27 @@ def _render_page(data: _PageData, number: int, assets_dir: Path, counter: list[i
     for image in data.images:
         counter[0] += 1
         name = f'page{number}_image{counter[0]}.{image.ext}'
-        assets_dir.mkdir(parents=True, exist_ok=True)
-        (assets_dir / name).write_bytes(image.data)
-        elements.append((image.y, image.x, f'![{name}]({assets_dir.name}/{name})'))
+        mime = mimetypes.guess_type(f'image.{image.ext}')[0] or 'application/octet-stream'
+        url = sink.put(name, image.data, mime)
+        if url is not None:
+            elements.append((image.y, image.x, f'![{name}]({url})'))
     elements.sort(key=lambda element: (element[0], element[1]))
     return [element[2] for element in elements]
 
 
-def convert_pdf(source: Path, output: Path) -> str:
+def convert_pdf(source: Path, sink: AssetSink) -> str:
     """Convert a pdf file to Markdown.
 
-    Pictures are extracted into ``{output.stem}_files`` next to the
-    output file and referenced with relative paths. Returns an empty
-    string when the document has no content.
+    Pictures are handed to the sink and referenced in the output. Returns
+    an empty string when the document has no content.
     """
-    assets_dir = assets_dir_for(output)
     counter = [0]
     sections: list[str] = []
     with fitz.open(source) as doc:
         pages = [_collect_page(page, doc) for page in doc]
     body = _body_size(pages)
     for number, data in enumerate(pages, start=1):
-        rendered = _render_page(data, number, assets_dir, counter, body)
+        rendered = _render_page(data, number, sink, counter, body)
         if rendered:
             sections.append('\n\n'.join(rendered))
     return '\n\n'.join(sections).strip('\n')

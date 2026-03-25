@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from any2txt.asr import Segment
+from any2txt.assets import AssetSink
 from any2txt.cli import app
 
 runner = CliRunner()
@@ -65,28 +66,28 @@ def fake_recognize_selective(image: Path) -> str:
     return 'Hello OCR'
 
 
-def fake_convert_docx(_source: Path, _output: Path) -> str:
+def fake_convert_docx(_source: Path, _sink: AssetSink) -> str:
     """Return fixed Markdown content."""
     return '# Doc'
 
 
-def fake_convert_docx_empty(_source: Path, _output: Path) -> str:
+def fake_convert_docx_empty(_source: Path, _sink: AssetSink) -> str:
     """Return no Markdown content at all (nothing detected)."""
     return ''
 
 
-def fake_convert_docx_failing(source: Path, output: Path) -> str:
-    """Create a leftover assets directory, then fail."""
-    output.parent.joinpath(f'{output.stem}_files').mkdir(parents=True, exist_ok=True)
+def fake_convert_docx_failing(_source: Path, sink: AssetSink) -> str:
+    """Write a leftover asset, then fail."""
+    sink.put('leftover.png', b'png', 'image/png')
     raise RuntimeError('boom')
 
 
-def fake_convert_pptx(_source: Path, _output: Path) -> str:
+def fake_convert_pptx(_source: Path, _sink: AssetSink) -> str:
     """Return fixed Markdown content."""
     return '## Slide 1'
 
 
-def fake_convert_excel(_source: Path, _output: Path) -> str:
+def fake_convert_excel(_source: Path, _sink: AssetSink) -> str:
     """Return fixed Markdown content."""
     return '## Sheet'
 
@@ -163,11 +164,11 @@ def test_cli_source_not_found(tmp_path: Path) -> None:
 
 
 def test_cli_rejects_unsupported_media(tmp_path: Path) -> None:
-    """An unsupported extension fails with exit code 1."""
+    """An unsupported extension fails with exit code 2."""
     src = tmp_path / 'notes.csv'
     src.write_text('not a media file')
     result = runner.invoke(app, [str(src)])
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert 'not a supported media file' in result.output
 
 
@@ -834,3 +835,135 @@ def test_cli_directory_excel_only_skips_model_hint(tmp_path: Path, monkeypatch: 
     assert (src / 'a.md').is_file()
     assert (src / 'b.md').is_file()
     assert 'Loading model' not in result.output
+
+
+def test_cli_stdout_writes_only_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--stdout puts the text on stdout and writes no output file."""
+    src = make_docx(tmp_path / 'doc.docx')
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx)
+    result = runner.invoke(app, [str(src), '--stdout'])
+    assert result.exit_code == 0
+    assert result.stdout == '# Doc\n'
+    assert '# Doc' not in result.stderr
+    assert not src.with_suffix('.md').exists()
+
+
+def test_cli_stdout_keeps_diagnostics_on_stderr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Progress and hints never contaminate the stdout payload."""
+    src = make_image(tmp_path / 'photo.png')
+    monkeypatch.setattr('any2txt.cli.recognize', fake_recognize_empty)
+    result = runner.invoke(app, [str(src), '--stdout'])
+    assert result.exit_code == 0
+    assert result.stdout == ''
+    assert 'no text detected' in result.stderr
+    assert 'no text detected' not in result.stdout
+
+
+def test_cli_stdout_empty_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty conversion writes nothing to stdout and exits 0."""
+    src = make_docx(tmp_path / 'blank.docx')
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx_empty)
+    result = runner.invoke(app, [str(src), '--stdout'])
+    assert result.exit_code == 0
+    assert result.stdout == ''
+    assert 'no content detected' in result.stderr
+
+
+def test_cli_stdout_drops_assets_by_default(tmp_path: Path) -> None:
+    """HTML local images are dropped by default so the Markdown has no dead links."""
+    src = make_html(tmp_path / 'page.html', '<h1>Page</h1><img src="pic.png">')
+    (tmp_path / 'pic.png').write_bytes(b'png')
+    result = runner.invoke(app, [str(src), '--stdout'])
+    assert result.exit_code == 0
+    assert '# Page' in result.stdout
+    assert '![' not in result.stdout
+    assert not (tmp_path / 'page_files').exists()
+
+
+def test_cli_stdout_embed_inlines_images(tmp_path: Path) -> None:
+    """--assets embed produces a self-contained Markdown document."""
+    src = make_html(tmp_path / 'page.html', '<img src="pic.png">')
+    (tmp_path / 'pic.png').write_bytes(b'png')
+    result = runner.invoke(app, [str(src), '--stdout', '--assets', 'embed'])
+    assert result.exit_code == 0
+    assert 'data:image/png;base64,' in result.stdout
+    assert not (tmp_path / 'page_files').exists()
+
+
+def test_cli_stdout_rejects_output_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--stdout cannot be combined with an explicit output path."""
+    src = make_docx(tmp_path / 'doc.docx')
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx)
+    result = runner.invoke(app, [str(src), str(tmp_path / 'out.md'), '--stdout'])
+    assert result.exit_code == 1
+    assert 'cannot be combined with an output path' in result.stderr
+    assert not (tmp_path / 'out.md').exists()
+
+
+def test_cli_stdout_rejects_assets_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--assets dir writes files, so it is rejected in stdout mode."""
+    src = make_docx(tmp_path / 'doc.docx')
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx)
+    result = runner.invoke(app, [str(src), '--stdout', '--assets', 'dir'])
+    assert result.exit_code == 1
+    assert 'cannot be combined with --stdout' in result.stderr
+
+
+def test_cli_stdout_rejects_directory(tmp_path: Path) -> None:
+    """--stdout accepts a single file only."""
+    src = tmp_path / 'media'
+    make_docx(src / 'doc.docx')
+    result = runner.invoke(app, [str(src), '--stdout'])
+    assert result.exit_code == 1
+    assert 'single media file' in result.stderr
+
+
+def test_cli_stdout_missing_source(tmp_path: Path) -> None:
+    """A missing source still exits 1 in stdout mode."""
+    result = runner.invoke(app, [str(tmp_path / 'missing.docx'), '--stdout'])
+    assert result.exit_code == 1
+    assert 'not found' in result.stderr
+
+
+def test_cli_stdout_unsupported_media(tmp_path: Path) -> None:
+    """Unsupported inputs use exit code 2 in stdout mode."""
+    src = tmp_path / 'notes.csv'
+    src.write_text('not a media file')
+    result = runner.invoke(app, [str(src), '--stdout'])
+    assert result.exit_code == 2
+    assert 'not a supported media file' in result.stderr
+    assert result.stdout == ''
+
+
+def test_cli_stdout_conversion_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing conversion exits 1 and reports the error on stderr."""
+    src = make_docx(tmp_path / 'bad.docx')
+    monkeypatch.setattr('any2txt.cli.convert_docx', fake_convert_docx_failing)
+    result = runner.invoke(app, [str(src), '--stdout'])
+    assert result.exit_code == 1
+    assert 'conversion failed' in result.stderr
+    assert result.stdout == ''
+    assert not (tmp_path / 'bad_files').exists()
+
+
+def test_cli_assets_embed_writes_no_files(tmp_path: Path) -> None:
+    """--assets embed in file mode inlines images and creates no assets directory."""
+    src = make_html(tmp_path / 'page.html', '<img src="pic.png">')
+    (tmp_path / 'pic.png').write_bytes(b'png')
+    result = runner.invoke(app, [str(src), '--assets', 'embed'])
+    assert result.exit_code == 0
+    markdown = src.with_suffix('.md').read_text(encoding='utf-8')
+    assert 'data:image/png;base64,' in markdown
+    assert not (tmp_path / 'page_files').exists()
+
+
+def test_cli_assets_drop_removes_references(tmp_path: Path) -> None:
+    """--assets drop keeps the text but omits every extracted resource."""
+    src = make_html(tmp_path / 'page.html', '<p>text</p><img src="pic.png">')
+    (tmp_path / 'pic.png').write_bytes(b'png')
+    result = runner.invoke(app, [str(src), '--assets', 'drop'])
+    assert result.exit_code == 0
+    markdown = src.with_suffix('.md').read_text(encoding='utf-8')
+    assert 'text' in markdown
+    assert '![' not in markdown
+    assert not (tmp_path / 'page_files').exists()

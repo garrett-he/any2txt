@@ -15,6 +15,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 from pptx.util import Inches
 
+from any2txt.assets import DataUriSink, DirSink
 from any2txt.pptx import convert_pptx
 
 if TYPE_CHECKING:
@@ -54,7 +55,7 @@ def build_deck(path: Path) -> Path:
 def convert_fixture(tmp_path: Path) -> str:
     """Build a deck fixture, convert it, and return the Markdown."""
     source = build_deck(tmp_path / 'deck.pptx')
-    return convert_pptx(source, tmp_path / 'deck.md')
+    return convert_pptx(source, DirSink(tmp_path / 'deck_files'))
 
 
 def test_convert_titles_and_bullets(tmp_path: Path) -> None:
@@ -95,7 +96,7 @@ def test_convert_skips_linked_only_picture(tmp_path: Path) -> None:
     del blip.attrib[qn('r:embed')]
     linked = tmp_path / 'linked.pptx'
     presentation.save(str(linked))
-    markdown = convert_pptx(linked, tmp_path / 'linked.md')
+    markdown = convert_pptx(linked, DirSink(tmp_path / 'linked_files'))
     assert '## Slide 2' in markdown
     assert 'slide2_image' not in markdown
 
@@ -112,7 +113,7 @@ def test_convert_skips_unrecognized_image_part(tmp_path: Path) -> None:
     blip.set(qn('r:embed'), 'rId1')
     repointed = tmp_path / 'repointed.pptx'
     presentation.save(str(repointed))
-    markdown = convert_pptx(repointed, tmp_path / 'repointed.md')
+    markdown = convert_pptx(repointed, DirSink(tmp_path / 'repointed_files'))
     assert '## Slide 2' in markdown
     assert 'slide2_image' not in markdown
 
@@ -127,4 +128,11 @@ def test_convert_empty_presentation(tmp_path: Path) -> None:
     """A presentation without slides converts to an empty string."""
     source = tmp_path / 'empty.pptx'
     Presentation().save(str(source))
-    assert convert_pptx(source, tmp_path / 'empty.md') == ''
+    assert convert_pptx(source, DirSink(tmp_path / 'empty_files')) == ''
+
+
+def test_convert_picture_embeds_data_uri(tmp_path: Path) -> None:
+    """Embed mode inlines pictures and writes nothing to disk."""
+    markdown = convert_pptx(build_deck(tmp_path / 'deck.pptx'), DataUriSink())
+    assert '![slide2_image1.png](data:image/png;base64,' in markdown
+    assert not (tmp_path / 'deck_files').exists()

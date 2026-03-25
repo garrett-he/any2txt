@@ -11,6 +11,7 @@ from pathlib import Path
 from openpyxl import Workbook  # pyrefly: ignore
 from openpyxl.drawing.image import Image as XlsxImage  # pyrefly: ignore
 
+from any2txt.assets import DataUriSink, DirSink, DropSink
 from any2txt.excel import convert_excel
 
 PNG_1X1 = base64.b64decode(
@@ -35,7 +36,7 @@ def build_workbook(path: Path) -> Path:
 def convert_fixture(tmp_path: Path) -> str:
     """Build a workbook fixture, convert it, and return the Markdown."""
     source = build_workbook(tmp_path / 'book.xlsx')
-    return convert_excel(source, tmp_path / 'book.md')
+    return convert_excel(source, DirSink(tmp_path / 'book_files'))
 
 
 def test_convert_sheets_as_headings_and_tables(tmp_path: Path) -> None:
@@ -63,7 +64,7 @@ def test_convert_empty_workbook(tmp_path: Path) -> None:
     """A workbook without any content converts to an empty string."""
     source = tmp_path / 'empty.xlsx'
     Workbook().save(str(source))
-    assert convert_excel(source, tmp_path / 'empty.md') == ''
+    assert convert_excel(source, DirSink(tmp_path / 'empty_files')) == ''
 
 
 def test_convert_fills_merged_cells(tmp_path: Path) -> None:
@@ -78,7 +79,7 @@ def test_convert_fills_merged_cells(tmp_path: Path) -> None:
     sheet.merge_cells('A2:A3')
     sheet['A2'] = 'Group'
     workbook.save(str(source))
-    markdown = convert_excel(source, tmp_path / 'merged.md')
+    markdown = convert_excel(source, DirSink(tmp_path / 'merged_files'))
     assert '| Group | one |' in markdown
     assert '| Group | two |' in markdown
 
@@ -94,10 +95,41 @@ def test_convert_images_extracts_to_assets(tmp_path: Path) -> None:
     image = XlsxImage(io.BytesIO(PNG_1X1))
     sheet.add_image(image, 'B2')
     workbook.save(str(source))
-    markdown = convert_excel(source, tmp_path / 'images.md')
+    markdown = convert_excel(source, DirSink(tmp_path / 'images_files'))
     assets = tmp_path / 'images_files'
     pictures = list(assets.glob('image*.png'))
     assert len(pictures) == 1
     assert pictures[0].read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
     assert f'images_files/{pictures[0].name}' in markdown
     assert '![image1.png](images_files/image1.png)' in markdown
+
+
+def test_convert_images_embed_data_uri(tmp_path: Path) -> None:
+    """Embed mode inlines pictures as data URIs and writes no files."""
+    source = tmp_path / 'images.xlsx'
+    workbook = Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.append(['Name', 'Picture'])
+    sheet.append(['row', None])
+    sheet.add_image(XlsxImage(io.BytesIO(PNG_1X1)), 'B2')
+    workbook.save(str(source))
+    markdown = convert_excel(source, DataUriSink())
+    assert '![image1.png](data:image/png;base64,' in markdown
+    assert not (tmp_path / 'images_files').exists()
+
+
+def test_convert_images_dropped(tmp_path: Path) -> None:
+    """Drop mode keeps the data but omits picture references."""
+    source = tmp_path / 'images.xlsx'
+    workbook = Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.append(['Name', 'Picture'])
+    sheet.append(['row', None])
+    sheet.add_image(XlsxImage(io.BytesIO(PNG_1X1)), 'B2')
+    workbook.save(str(source))
+    markdown = convert_excel(source, DropSink())
+    assert '| Name | Picture |' in markdown
+    assert '![' not in markdown
+    assert not (tmp_path / 'images_files').exists()

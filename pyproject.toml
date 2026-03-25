@@ -50,6 +50,11 @@ urls.Issues = "https://github.com/garrett-he/any2txt/issues"
 urls.Repository = "https://github.com/garrett-he/any2txt.git"
 scripts.any2txt = "any2txt.cli:app"
 
+[dependency-groups]
+dev = [
+    "nuitka[onefile]>=4.3.3",
+]
+
 [tool.hatch]
 build.targets.wheel.packages = [ "src/any2txt" ]
 

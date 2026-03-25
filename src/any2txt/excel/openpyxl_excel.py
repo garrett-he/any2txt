@@ -15,6 +15,7 @@ workbooks often write incorrectly (truncating columns), and it does not
 load embedded images.
 """
 
+import mimetypes
 import warnings
 from collections import defaultdict
 from pathlib import Path
@@ -24,7 +25,8 @@ from openpyxl import load_workbook  # pyrefly: ignore
 from openpyxl.workbook.workbook import Workbook  # pyrefly: ignore
 from openpyxl.worksheet.worksheet import Worksheet  # pyrefly: ignore
 
-from any2txt.assets import assets_dir_for
+from any2txt.assets import AssetSink
+from any2txt.zipguard import guard_zip
 
 
 def _cell_to_text(value: object) -> str:
@@ -55,29 +57,33 @@ def _load_grid(worksheet: Worksheet) -> list[list[Any]]:
     return grid
 
 
-def _collect_images(worksheet: Worksheet, assets_dir: Path, counter: list[int]) -> dict[tuple[int, int], list[str]]:
-    """Extract embedded pictures and map their anchors to cell positions."""
-    refs: dict[tuple[int, int], list[str]] = defaultdict(list)
+def _collect_images(
+    worksheet: Worksheet, sink: AssetSink, counter: list[int]
+) -> dict[tuple[int, int], list[tuple[str, str]]]:
+    """Hand embedded pictures to the sink and map anchors to (name, url) pairs."""
+    refs: dict[tuple[int, int], list[tuple[str, str]]] = defaultdict(list)
     for image in getattr(worksheet, '_images', []):
         origin = getattr(getattr(image, 'anchor', None), '_from', None)
         if origin is None:
             continue
         counter[0] += 1
-        name = f'image{counter[0]}.{image.format}'
-        assets_dir.mkdir(parents=True, exist_ok=True)
-        (assets_dir / name).write_bytes(image._data())
-        refs[(origin.row, origin.col)].append(name)
+        extension = str(image.format).lower()
+        name = f'image{counter[0]}.{extension}'
+        mime = mimetypes.guess_type(f'image.{extension}')[0] or 'application/octet-stream'
+        url = sink.put(name, image._data(), mime)
+        if url is not None:
+            refs[(origin.row, origin.col)].append((name, url))
     return refs
 
 
-def _cell_content(value: object, image_names: list[str], assets_dir: Path) -> str:
+def _cell_content(value: object, images: list[tuple[str, str]]) -> str:
     """Render one cell: its text plus any anchored picture references."""
     parts = [text for text in [_cell_to_text(value)] if text]
-    parts += [f'![{name}]({assets_dir.name}/{name})' for name in image_names]
+    parts += [f'![{name}]({url})' for name, url in images]
     return '<br>'.join(parts)
 
 
-def _sheet_to_lines(worksheet: Worksheet, refs: dict[tuple[int, int], list[str]], assets_dir: Path) -> list[str]:
+def _sheet_to_lines(worksheet: Worksheet, refs: dict[tuple[int, int], list[tuple[str, str]]]) -> list[str]:
     """Render one worksheet grid as Markdown pipe-table lines."""
     grid = _load_grid(worksheet)
     if not grid:
@@ -91,7 +97,7 @@ def _sheet_to_lines(worksheet: Worksheet, refs: dict[tuple[int, int], list[str]]
                 existing.extend([None] * (col + 1 - width))
             width = col + 1
     grid = [
-        [_cell_content(value, refs.get((row, col), []), assets_dir) for col, value in enumerate(grid_row)]
+        [_cell_content(value, refs.get((row, col), [])) for col, value in enumerate(grid_row)]
         for row, grid_row in enumerate(grid)
     ]
     while grid and all(cell == '' for cell in grid[-1]):
@@ -106,32 +112,32 @@ def _sheet_to_lines(worksheet: Worksheet, refs: dict[tuple[int, int], list[str]]
     return lines
 
 
-def _sections(workbook: Workbook, assets_dir: Path, counter: list[int]) -> list[str]:
+def _sections(workbook: Workbook, sink: AssetSink, counter: list[int]) -> list[str]:
     """Render every non-empty worksheet as a ``## `` section."""
     sections: list[str] = []
     for worksheet in workbook.worksheets:
-        refs = _collect_images(worksheet, assets_dir, counter)
-        lines = _sheet_to_lines(worksheet, refs, assets_dir)
+        refs = _collect_images(worksheet, sink, counter)
+        lines = _sheet_to_lines(worksheet, refs)
         if not lines:
             continue
         sections.append('\n'.join([f'## {worksheet.title}', '', *lines]))
     return sections
 
 
-def convert_excel(source: Path, output: Path) -> str:
+def convert_excel(source: Path, sink: AssetSink) -> str:
     """Convert an excel file to Markdown, one ``## `` section per sheet.
 
-    Embedded pictures are extracted into ``{output.stem}_files`` next to
-    the output file and referenced inside their anchored cells. Returns
-    an empty string when the workbook has no content at all.
+    Embedded pictures are handed to the sink and referenced inside their
+    anchored cells. Returns an empty string when the workbook has no
+    content at all.
     """
-    assets_dir = assets_dir_for(output)
+    guard_zip(source)
     counter = [0]
     with warnings.catch_warnings():
         # WPS-generated workbooks miss the default style; that is harmless.
         warnings.simplefilter('ignore', UserWarning)
         workbook = load_workbook(source, data_only=True)
         try:
-            return '\n\n'.join(_sections(workbook, assets_dir, counter)).strip('\n')
+            return '\n\n'.join(_sections(workbook, sink, counter)).strip('\n')
         finally:
             workbook.close()

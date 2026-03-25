@@ -17,8 +17,9 @@ from typing import Any, BinaryIO, Protocol
 import mammoth
 from mammoth import docx as mammoth_docx
 
-from any2txt.assets import assets_dir_for
+from any2txt.assets import AssetSink
 from any2txt.formats.markdown import html_to_markdown
+from any2txt.zipguard import guard_zip
 
 _CONTENT_TYPE_EXTENSIONS = {
     'image/bmp': 'bmp',
@@ -73,33 +74,32 @@ def _extension_for(content_type: str) -> str:
     return _CONTENT_TYPE_EXTENSIONS.get(content_type.split(';')[0].strip().lower(), 'bin')
 
 
-def _image_handler(assets_dir: Path, counter: list[int]) -> Callable[[_MammothImage], dict[str, str]]:
-    """Build a mammoth image converter that writes images into assets_dir."""
+def _image_handler(sink: AssetSink, counter: list[int]) -> Callable[[_MammothImage], dict[str, str]]:
+    """Build a mammoth image converter that hands images to the sink."""
 
     def convert_image(image: _MammothImage) -> dict[str, str]:
         extension = _extension_for(image.content_type)
         counter[0] += 1
         name = f'image{counter[0]}.{extension}'
-        assets_dir.mkdir(parents=True, exist_ok=True)
         with image.open() as data:
-            (assets_dir / name).write_bytes(data.read())
-        return {'src': f'{assets_dir.name}/{name}'}
+            url = sink.put(name, data.read(), image.content_type)
+        return {'src': url or ''}
 
     return convert_image
 
 
-def _extract_embeddings(source: Path, assets_dir: Path) -> list[str]:
-    """Extract OLE embedded objects from the docx package into assets_dir."""
-    names: list[str] = []
+def _extract_embeddings(source: Path, sink: AssetSink) -> list[tuple[str, str]]:
+    """Hand OLE embedded objects to the sink; return (name, url) pairs."""
+    assets: list[tuple[str, str]] = []
     with zipfile.ZipFile(source) as archive:
         for info in archive.infolist():
             basename = Path(info.filename).name
             if not info.filename.startswith('word/embeddings/') or not basename:
                 continue
-            assets_dir.mkdir(parents=True, exist_ok=True)
-            (assets_dir / basename).write_bytes(archive.read(info))
-            names.append(basename)
-    return names
+            url = sink.put(basename, archive.read(info), 'application/octet-stream')
+            if url is not None:
+                assets.append((basename, url))
+    return assets
 
 
 _DRAWING_OPEN = '<w:drawing>'
@@ -195,28 +195,28 @@ def _open_for_conversion(source: Path) -> BinaryIO:
         return buffer
 
 
-def _append_attachments(markdown: str, attachments: list[str], assets_dir: Path) -> str:
+def _append_attachments(markdown: str, attachments: list[tuple[str, str]]) -> str:
     """Append an appendix section linking the extracted embedded objects."""
     lines = ['## 附件', '']
-    lines += [f'- [{name}]({assets_dir.name}/{name})' for name in attachments]
+    lines += [f'- [{name}]({url})' for name, url in attachments]
     return markdown.rstrip('\n') + '\n\n' + '\n'.join(lines) + '\n'
 
 
-def convert_docx(source: Path, output: Path) -> str:
+def convert_docx(source: Path, sink: AssetSink) -> str:
     """Convert a docx file to Markdown.
 
-    Images and embedded objects are extracted into ``{output.stem}_files``
-    next to the output file and referenced with relative paths. Returns an
+    Images and embedded objects are handed to the sink, which decides
+    whether they become files, data URIs, or nothing at all. Returns an
     empty string when the document has no content.
     """
-    assets_dir = assets_dir_for(output)
+    guard_zip(source)
     counter = [0]
     with _open_for_conversion(source) as stream:
         result = mammoth.convert_to_html(
-            stream, convert_image=mammoth.images.img_element(_image_handler(assets_dir, counter))
+            stream, convert_image=mammoth.images.img_element(_image_handler(sink, counter))
         )
     markdown = html_to_markdown(result.value)
-    attachments = _extract_embeddings(source, assets_dir)
+    attachments = _extract_embeddings(source, sink)
     if attachments:
-        markdown = _append_attachments(markdown, attachments, assets_dir)
+        markdown = _append_attachments(markdown, attachments)
     return markdown.strip('\n')

@@ -29,6 +29,12 @@ class PipeSafeMarkdownConverter(MarkdownConverter):
         """Convert a table header cell with pipe escaping."""
         return self._escape_cell(el, text, parent_tags)
 
+    def convert_img(self, el: Tag, text: str, parent_tags: tuple[str, ...] | None = None) -> str:
+        """Drop images whose asset was discarded by the active asset mode."""
+        if not el.get('src'):
+            return ''
+        return super().convert_img(el, text, parent_tags)  # type: ignore[arg-type]
+
 
 def html_to_markdown(html: str) -> str:
     """Convert an HTML fragment to Markdown."""

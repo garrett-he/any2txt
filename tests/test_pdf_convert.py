@@ -9,7 +9,9 @@ from pathlib import Path
 
 import pymupdf as fitz
 
+from any2txt.assets import DataUriSink, DirSink
 from any2txt.pdf import convert_pdf
+from any2txt.pdf.pymupdf_pdf import _normalized_image
 
 PNG_1X1 = base64.b64decode(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
@@ -33,7 +35,7 @@ def build_pdf(path: Path) -> Path:
 def convert_fixture(tmp_path: Path) -> str:
     """Build a pdf fixture, convert it, and return the Markdown."""
     source = build_pdf(tmp_path / 'doc.pdf')
-    return convert_pdf(source, tmp_path / 'doc.md')
+    return convert_pdf(source, DirSink(tmp_path / 'doc_files'))
 
 
 def test_convert_font_size_headings(tmp_path: Path) -> None:
@@ -54,6 +56,34 @@ def test_convert_image_extracts_to_assets(tmp_path: Path) -> None:
     assert 'doc_files/page1_image1.png' in markdown
 
 
+def test_convert_image_embeds_data_uri(tmp_path: Path) -> None:
+    """Embed mode inlines pictures as data URIs and writes no files."""
+    source = build_pdf(tmp_path / 'doc.pdf')
+    markdown = convert_pdf(source, DataUriSink())
+    assert '![page1_image1.png](data:image/png;base64,' in markdown
+    assert not (tmp_path / 'doc_files').exists()
+
+
+def test_normalized_image_keeps_web_formats(tmp_path: Path) -> None:
+    """Formats every renderer supports are passed through unchanged."""
+    source = build_pdf(tmp_path / 'doc.pdf')
+    with fitz.open(source) as doc:
+        xref = doc[0].get_images(full=True)[0][0]
+        extension, data = _normalized_image(doc, xref, {'ext': 'png', 'image': b'original'})
+    assert extension == 'png'
+    assert data == b'original'
+
+
+def test_normalized_image_reencodes_unsupported_formats(tmp_path: Path) -> None:
+    """CCITT/JBIG2/JPEG 2000 payloads become PNG so renderers can show them."""
+    source = build_pdf(tmp_path / 'doc.pdf')
+    with fitz.open(source) as doc:
+        xref = doc[0].get_images(full=True)[0][0]
+        extension, data = _normalized_image(doc, xref, {'ext': 'jpx', 'image': b'jpx'})
+    assert extension == 'png'
+    assert data.startswith(b'\x89PNG\r\n\x1a\n')
+
+
 def test_convert_uri_links(tmp_path: Path) -> None:
     """URI link annotations become Markdown links."""
     markdown = convert_fixture(tmp_path)
@@ -67,4 +97,4 @@ def test_convert_empty_pdf(tmp_path: Path) -> None:
     doc.new_page()
     doc.save(str(source))
     doc.close()
-    assert convert_pdf(source, tmp_path / 'empty.md') == ''
+    assert convert_pdf(source, DirSink(tmp_path / 'empty_files')) == ''

@@ -15,11 +15,14 @@ this file covers things agents need to know.
 ```text
 src/any2txt/
 ├── cli.py              # argument parsing + pipeline orchestration only
+├── assets.py           # AssetSink: dir / drop / embed, chosen by the CLI
+├── runtime.py          # packaged-build paths (app dir, models dir); stdlib only
+├── zipguard.py         # zip-bomb guard for docx/pptx/xlsx packages
 ├── asr/                # speech recognition backends
 │   ├── base.py         # Segment dataclass: the contract between layers
 │   └── faster_whisper.py
 ├── docx/               # docx to Markdown backend (mammoth)
-│   └── mammoth_docx.py # docx -> semantic HTML, asset extraction ({stem}_files/)
+│   └── mammoth_docx.py # docx -> semantic HTML, assets via the sink
 ├── excel/              # excel to Markdown backend (openpyxl)
 │   └── openpyxl_excel.py # one ## section per sheet, grid as pipe table
 ├── formats/            # pure text -> text output renderers
@@ -29,42 +32,59 @@ src/any2txt/
 │   ├── audio.py        # extension-based validation only
 │   ├── docx.py         # extension-based validation only
 │   ├── excel.py        # extension-based validation only
-│   ├── html.py         # extension-based validation, local image extraction
+│   ├── html.py         # decoding fallbacks, local image extraction
 │   ├── image.py        # extension-based validation only
 │   ├── pdf.py          # extension-based validation only
 │   ├── pptx.py         # extension-based validation only
 │   └── video.py        # extension-based validation only
 ├── ocr/                # image text recognition backend (RapidOCR)
 │   └── rapid_ocr.py
-├── excel/              # excel to Markdown backend (openpyxl)
-│   └── openpyxl_excel.py # one ## section per sheet, grid as pipe table
 ├── pdf/                # pdf to Markdown backend (PyMuPDF)
-│   └── pymupdf_pdf.py  # font-size headings, tables, asset extraction ({stem}_files/)
+│   └── pymupdf_pdf.py  # font-size headings, tables, assets via the sink
 ├── pptx/               # pptx to Markdown backend (python-pptx)
-│   └── python_pptx.py  # slides -> sections, asset extraction ({stem}_files/)
+│   └── python_pptx.py  # slides -> sections, assets via the sink
 └── text/               # post-processing (han.py: script conversion)
+```
+
+Release tooling lives outside the installed package:
+
+```text
+packaging/
+├── launcher.py         # Nuitka entry point: sys.path + DLL dirs, then cli.app
+└── build_release.py    # builds the onefile exe, deps zip, and model zip
 ```
 
 Design rules:
 
 - `cli.py` must stay thin: parse args, call into subpackages, write output.
+- `runtime.py` must remain stdlib-only: the launcher imports it before
+  external packages are on `sys.path`, and packaged builds must not
+  download models (they resolve `models/<size>` next to the executable).
 - Media modules validate/extract; they never format output. New media
   types register their extension predicate in `media/__init__.py`
   (`is_supported`); the conversion pipeline is media-type agnostic and
   must stay that way.
 - Format modules consume `Iterable[Segment]` (or plain text) and return
   strings; they never touch the filesystem.
+- Document backends (docx/pptx/xlsx/pdf) never write resources either:
+  they call `AssetSink.put(name, data, mime)` and use the returned URL,
+  dropping the reference when it returns `None`. Only `cli.py` chooses
+  the concrete sink (`make_sink`), so `--assets` never leaks into
+  backends. `assets.py` owns the caps for `embed` mode.
+- Package-based formats call `zipguard.guard_zip` before parsing; the
+  size limits must stay conservative.
 - The decoding of video/audio happens inside the ASR backend (PyAV via
   faster-whisper). Do not reintroduce an ffmpeg subprocess pipeline.
 
 ## Planned extensions (keep the seams clean)
 
-Future media types (pdf, ...) each get a module under `media/`. New
+Future media types each get a module under `media/`. New
 output formats go under `formats/`. A new ASR engine goes under `asr/`
 and must yield `Segment` objects as defined in `asr/base.py`. New OCR
-or document-conversion engines go under `ocr/` or `docx/` (backends
-that are not ASR do not yield `Segment` objects). If a change crosses
-these layers, stop and reconsider.
+or document-conversion engines go under `ocr/` or a format-named
+backend package (backends that are not ASR do not yield `Segment`
+objects) and must accept an `AssetSink`. If a change crosses these
+layers, stop and reconsider.
 
 ## Toolchain and conventions
 
@@ -97,6 +117,11 @@ these layers, stop and reconsider.
 - Coverage gate is 80% (`fail_under` in pyproject.toml). Format
   functions are pure: test edge cases (empty input, zero-duration
   segments, width boundaries) directly without CLI plumbing.
+- Converter tests pass a sink explicitly (`DirSink`, `DropSink`, or
+  `DataUriSink`); never construct an output path for them. CLI tests
+  use `result.stdout` / `result.stderr` (click 8.5+ separates them) to
+  assert the `--stdout` contract; `result.output` is the combined
+  stream.
 
 ## Gotchas
 
@@ -108,17 +133,21 @@ these layers, stop and reconsider.
   It applies to SRT and OCR output, not to document formats.
 - Time math in `formats/srt.py` uses display width (full-width = 2);
   `\n` counts as 0. Keep that consistent when editing wrap/split logic.
-- docx conversion is the only path that receives the output path: it
-  writes assets into `{output.stem}_files/` next to the output file.
-  On failure, `cli.py` removes that directory as well as the output.
-- docx, html, pptx, and pdf write assets into the `{output.stem}_files/`
-  directory next to the output file (`assets.assets_dir_for`); on
-  failure, `cli.py` removes that directory as well as the output.
+- Document backends receive an `AssetSink`, not a path. In file mode
+  `cli.py` uses `DirSink(assets_dir_for(output))`; on failure it removes
+  that directory as well as the output. In `--stdout` mode the default
+  sink is `DropSink`, so nothing is written to disk.
+- `--stdout` is the machine interface: exactly one input file, text
+  only on stdout, all diagnostics on stderr, exit 0/1/2 (2 =
+  unsupported input). Never let progress or hints reach stdout.
 - docx and html share the HTML-to-Markdown renderer in
   `formats/markdown.py` (a `MarkdownConverter` subclass with table
-  support, since markdownify has none natively). The filesystem part of
-  html conversion (copying locally referenced images) lives in
-  `media/html.py`, keeping `formats/` pure.
+  support, since markdownify has none natively). `convert_img` drops
+  images whose `src` is empty, which is how `drop` mode removes dead
+  references. The filesystem part of html conversion (reading local
+  images) lives in `media/html.py`, keeping `formats/` pure.
+- `read_html` tries UTF-8 (BOM-tolerant), the declared charset, GB18030,
+  then lossy UTF-8; keep that order when editing.
 - `pdf/pymupdf_pdf.py` infers headings from font sizes (PyMuPDF is
   AGPL-3.0 licensed); heading thresholds live in `_HEADING_RATIOS`.
 

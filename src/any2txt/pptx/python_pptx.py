@@ -19,7 +19,8 @@ from pptx.shapes.picture import Picture
 from pptx.slide import Slide
 from pptx.text.text import TextFrame, _Paragraph
 
-from any2txt.assets import assets_dir_for
+from any2txt.assets import AssetSink
+from any2txt.zipguard import guard_zip
 
 
 def _slide_title(slide: Slide) -> str:
@@ -71,12 +72,13 @@ def _render_table(shape: GraphicFrame) -> list[str]:
     return lines
 
 
-def _render_picture(shape: Picture, number: int, assets_dir: Path, counter: list[int]) -> str | None:
-    """Extract a slide picture into assets_dir and reference it.
+def _render_picture(shape: Picture, number: int, sink: AssetSink, counter: list[int]) -> str | None:
+    """Hand a slide picture to the sink and reference it in the Markdown.
 
     Returns None for pictures python-pptx cannot decode: linked-only
     pictures ("link to file", ValueError) and images stored in a format
     python-pptx does not recognize, e.g. ``image/unknown`` (AttributeError).
+    Also returns None when the active sink drops the asset.
     """
     try:
         image = shape.image
@@ -84,15 +86,14 @@ def _render_picture(shape: Picture, number: int, assets_dir: Path, counter: list
         return None
     counter[0] += 1
     name = f'slide{number}_image{counter[0]}.{image.ext}'
-    assets_dir.mkdir(parents=True, exist_ok=True)
-    (assets_dir / name).write_bytes(image.blob)
-    return f'![{name}]({assets_dir.name}/{name})'
+    url = sink.put(name, image.blob, image.content_type)
+    return f'![{name}]({url})' if url is not None else None
 
 
 def _render_shape(
     shape: BaseShape,
     number: int,
-    assets_dir: Path,
+    sink: AssetSink,
     counter: list[int],
     title_shape: BaseShape | None,
 ) -> list[str]:
@@ -100,12 +101,12 @@ def _render_shape(
     if isinstance(shape, GroupShape):
         lines: list[str] = []
         for child in shape.shapes:
-            lines += _render_shape(child, number, assets_dir, counter, None)
+            lines += _render_shape(child, number, sink, counter, None)
         return lines
     if isinstance(shape, GraphicFrame) and shape.has_table:
         return _render_table(shape)
     if isinstance(shape, Picture):
-        picture = _render_picture(shape, number, assets_dir, counter)
+        picture = _render_picture(shape, number, sink, counter)
         return [picture] if picture is not None else []
     if isinstance(shape, Shape) and shape is not title_shape:
         # body placeholders are bulleted by default in PowerPoint layouts
@@ -124,13 +125,13 @@ def _render_notes(slide: Slide) -> list[str]:
     return [f'> {line}' for line in text.splitlines() if line.strip()]
 
 
-def _render_slide(slide: Slide, number: int, assets_dir: Path, counter: list[int]) -> str:
+def _render_slide(slide: Slide, number: int, sink: AssetSink, counter: list[int]) -> str:
     """Render one slide as a Markdown section."""
     title_shape = slide.shapes.title
     title = _slide_title(slide)
     lines = [f'## {title}' if title else f'## Slide {number}']
     for shape in slide.shapes:
-        shape_lines = _render_shape(shape, number, assets_dir, counter, title_shape)
+        shape_lines = _render_shape(shape, number, sink, counter, title_shape)
         if shape_lines:
             lines.append('')
             lines += shape_lines
@@ -141,17 +142,16 @@ def _render_slide(slide: Slide, number: int, assets_dir: Path, counter: list[int
     return '\n'.join(lines)
 
 
-def convert_pptx(source: Path, output: Path) -> str:
+def convert_pptx(source: Path, sink: AssetSink) -> str:
     """Convert a pptx file to Markdown.
 
-    Slide pictures are extracted into ``{output.stem}_files`` next to the
-    output file and referenced with relative paths. Returns an empty
-    string when the presentation has no content.
+    Slide pictures are handed to the sink and referenced in the output.
+    Returns an empty string when the presentation has no content.
     """
-    assets_dir = assets_dir_for(output)
+    guard_zip(source)
     counter = [0]
     presentation = Presentation(str(source))
     sections = [
-        _render_slide(slide, number, assets_dir, counter) for number, slide in enumerate(presentation.slides, start=1)
+        _render_slide(slide, number, sink, counter) for number, slide in enumerate(presentation.slides, start=1)
     ]
     return '\n\n'.join(sections).strip('\n')

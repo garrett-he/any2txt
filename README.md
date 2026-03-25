@@ -5,9 +5,9 @@
 
 Transcribe video or audio files into SRT subtitles with local speech
 recognition (faster-whisper), recognize text in images with local OCR
-(RapidOCR), and convert Word documents, HTML pages, and PowerPoint
-decks into Markdown (mammoth, markdownify, python-pptx). No API key,
-no ffmpeg required.
+(RapidOCR), and convert Word documents, HTML pages, PowerPoint decks,
+Excel workbooks, and PDFs into Markdown (mammoth, markdownify,
+python-pptx, openpyxl, PyMuPDF). No API key, no ffmpeg required.
 
 ## Install
 
@@ -81,6 +81,15 @@ any2txt book.xlsx
 
 # Convert a PDF to Markdown; headings are inferred from font sizes
 any2txt doc.pdf
+
+# Machine interface: write one file's text to stdout, no output file
+any2txt doc.pdf --stdout
+
+# Inline extracted images as data URIs (self-contained Markdown)
+any2txt doc.docx --stdout --assets embed
+
+# Omit extracted images and attachments entirely
+any2txt doc.docx --assets drop
 ```
 
 ### Directory mode
@@ -96,6 +105,34 @@ are summarized at the end and the exit code is 1. Files sharing the
 same name but different extensions (e.g. `song.mp3` and `song.mp4`)
 conflict on the same output path and are reported as an error.
 
+### Machine interface (`--stdout`)
+
+`--stdout` is intended for programs that call any2txt directly. It
+accepts a single file (not a directory), writes the extracted text to
+stdout, and writes no output file. Diagnostics, progress, and warnings
+always go to stderr, so stdout contains only the payload. Output is
+always UTF-8; a single trailing newline is added when the text is not
+empty, and an empty conversion writes nothing at all.
+
+Exit codes: `0` success, `1` failure (missing input, I/O or conversion
+error), `2` unsupported input type.
+
+Extracted resources are controlled by `--assets`:
+
+| Value   | Behavior                                                              |
+| ------- | --------------------------------------------------------------------- |
+| `dir`   | Write into `{name}_files/` next to the output (file mode default)     |
+| `drop`  | Omit images and attachments; no files are written (stdout default)    |
+| `embed` | Inline images as `data:` URIs; no files are written                   |
+
+`--assets dir` requires an output file, so it cannot be combined with
+`--stdout`. In `drop` mode references are removed instead of leaving
+dead links. `embed` only inlines renderable image types (PNG, JPEG,
+GIF, WebP, SVG) up to 2 MiB per image and 16 MiB in total; anything
+else is dropped. Note that GitHub and some Markdown renderers strip
+`data:` image URIs, so `embed` is best for local viewing and ingestion
+pipelines that support them.
+
 ### Options
 
 | Option              | Default     | Description                                                        |
@@ -107,6 +144,8 @@ conflict on the same output path and are reported as an error.
 | `--asr-language`    | auto-detect | ISO language code of the audio (e.g. `zh`)                         |
 | `-r`, `--recursive` | off         | Also process files in subdirectories (directory mode)              |
 | `-f`, `--force`     | off         | Re-convert files whose output already exists (directory mode)       |
+| `--stdout`          | off         | Write one file's text to stdout instead of a file                   |
+| `--assets`          | `dir`       | Extracted resources: `dir`, `drop`, or `embed` (`drop` with stdout) |
 | `--version`         |             | Print the version and exit                                         |
 
 ## Notes
@@ -125,8 +164,12 @@ conflict on the same output path and are reported as an error.
   is not preserved. `--text-han` is not applied to docx output.
 - Embedded images and OLE objects are extracted into a `{name}_files/`
   directory next to the output Markdown and referenced with relative
-  paths; OLE objects cannot be located in the document flow, so they
-  are listed in an appendix section at the end.
+  paths (see `--assets` to drop or embed them instead); OLE objects
+  cannot be located in the document flow, so they are listed in an
+  appendix section at the end.
+- HTML pages are decoded as UTF-8 (with optional BOM), then by their
+  declared charset, then as GB18030, and finally with lossy UTF-8, so
+  legacy Chinese pages convert without failing.
 - HTML conversion renders the page structure to Markdown with the same
   engine as docx conversion (including tables). Images referenced by
   local paths are copied into the `{name}_files/` directory next to the
@@ -150,6 +193,9 @@ conflict on the same output path and are reported as an error.
   turns URI links into Markdown links. `--text-han` is not applied to pdf
   output. PyMuPDF is licensed under AGPL-3.0; local personal use is
   unaffected, but distributing this tool imposes AGPL obligations.
+- Office documents and workbooks are zip packages; entries whose
+  declared uncompressed size exceeds 512 MiB, or 1 GiB in total, are
+  rejected before decompression (zip-bomb protection).
 
 ## Development
 
@@ -162,6 +208,30 @@ just check     # run linters and type checks
 just test      # run the test suite
 just ci        # check + test
 ```
+
+## Packaging
+
+`just release` builds three Windows x64 artifacts under `dist/release/`:
+
+- `any2txt-<version>-win-x64.exe` — a Nuitka onefile executable that
+  contains only `any2txt` and the Python runtime.
+- `any2txt-<version>-deps-win-x64.zip` — the third-party dependencies;
+  extract it so that `lib/site-packages/` sits next to the executable.
+- `any2txt-<version>-models.zip` — the `base` Whisper model; extract it
+  so that `models/base/` sits next to the executable.
+
+The deployed layout is:
+
+```text
+any2txt/
+├── any2txt.exe
+├── lib/site-packages/
+└── models/base/
+```
+
+The executable exits with an error when `lib/site-packages/` is missing.
+Packaged builds load models from `models/<size>/` and never download
+them; set `ANY2TXT_MODELS` to use a different model directory.
 
 ## License
 
