@@ -215,7 +215,17 @@ def _convert_directory(
     return 0
 
 
-@app.command()
+@app.callback()
+def _root(
+    version: Annotated[
+        bool,
+        typer.Option('--version', callback=_version_callback, is_eager=True),
+    ] = False,
+) -> None:
+    """Convert media files: video/audio to SRT, images to text, documents to Markdown."""
+
+
+@app.command('transcribe')
 def main(
     src: Annotated[Path, typer.Argument(help='Path to a media file, or a directory of media files.')],
     dst: Annotated[
@@ -283,10 +293,6 @@ def main(
             '-f',
             help='Re-convert media files whose output already exists (directory mode).',
         ),
-    ] = False,
-    version: Annotated[
-        bool,
-        typer.Option('--version', callback=_version_callback, is_eager=True),
     ] = False,
 ) -> None:
     """Convert media files: video/audio to SRT, images to text, documents to Markdown.

@@ -25,71 +25,74 @@ pip install any2txt
 
 ## Usage
 
+Every conversion runs through the `transcribe` subcommand. `--version` is
+a root-level option.
+
 ```sh
 # Write video.srt next to the source file
-any2txt video.mp4
+any2txt transcribe video.mp4
 
 # Audio works the same way
-any2txt song.mp3
+any2txt transcribe song.mp3
 
 # Explicit output path (must end with .srt)
-any2txt video.mp4 output.srt
+any2txt transcribe video.mp4 output.srt
 
 # Convert the transcript to simplified Chinese
-any2txt video.mp4 --text-han simplified
+any2txt transcribe video.mp4 --text-han simplified
 
 # Pick a bigger model and pin the language
-any2txt video.mp4 --asr-model small --asr-language zh
+any2txt transcribe video.mp4 --asr-model small --asr-language zh
 
 # Custom line width and lines per cue
-any2txt video.mp4 --srt-line-width 42 --srt-max-lines 2
+any2txt transcribe video.mp4 --srt-line-width 42 --srt-max-lines 2
 
 # Convert every media file in a directory; each .srt lands next to its source
-any2txt videos/
+any2txt transcribe videos/
 
 # Convert into an output directory (created if missing), skipping
 # files whose .srt already exists
-any2txt videos/ output/
+any2txt transcribe videos/ output/
 
 # Include subdirectories (mirrored under the output directory) and
 # re-convert files whose output already exists
-any2txt videos/ output/ --recursive --force
+any2txt transcribe videos/ output/ --recursive --force
 
 # Recognize text in an image with OCR; writes photo.txt next to the source
-any2txt photo.png
+any2txt transcribe photo.png
 
 # Explicit output path for images (must end with .txt)
-any2txt photo.png output.txt
+any2txt transcribe photo.png output.txt
 
 # OCR output also honors --text-han (simplified/traditional Chinese)
-any2txt photo.png --text-han simplified
+any2txt transcribe photo.png --text-han simplified
 
 # Convert a Word document to Markdown; writes doc.md next to the source
-any2txt doc.docx
+any2txt transcribe doc.docx
 
 # Explicit output path for docx (must end with .md)
-any2txt doc.docx output.md
+any2txt transcribe doc.docx output.md
 
 # Convert an HTML page to Markdown; writes page.md next to the source
-any2txt page.html
+any2txt transcribe page.html
 
 # Convert a PowerPoint deck to Markdown; writes deck.md next to the source
-any2txt deck.pptx
+any2txt transcribe deck.pptx
 
 # Convert an Excel workbook to Markdown; each sheet becomes a h2 section
-any2txt book.xlsx
+any2txt transcribe book.xlsx
 
 # Convert a PDF to Markdown; headings are inferred from font sizes
-any2txt doc.pdf
+any2txt transcribe doc.pdf
 
 # Machine interface: write one file's text to stdout, no output file
-any2txt doc.pdf --stdout
+any2txt transcribe doc.pdf --stdout
 
 # Inline extracted images as data URIs (self-contained Markdown)
-any2txt doc.docx --stdout --assets embed
+any2txt transcribe doc.docx --stdout --assets embed
 
 # Omit extracted images and attachments entirely
-any2txt doc.docx --assets drop
+any2txt transcribe doc.docx --assets drop
 ```
 
 ### Directory mode

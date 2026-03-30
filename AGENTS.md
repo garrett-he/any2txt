@@ -127,8 +127,10 @@ layers, stop and reconsider.
 
 - Windows is the primary dev environment; paths in commands may use
   backslashes but Python code must stay portable.
-- The packaged entry point is `any2txt.cli:app` with a single Typer
-  command, so Typer treats it as the root command (no subcommand name).
+- The packaged entry point is `any2txt.cli:app`, which is a Typer group:
+  conversions run as `any2txt transcribe SRC ...`, while `--version`
+  lives on the root callback. Do not move conversion arguments back to
+  the root command.
 - `--text-han` uses a StrEnum; `convert_han` takes the enum, not a string.
   It applies to SRT and OCR output, not to document formats.
 - Time math in `formats/srt.py` uses display width (full-width = 2);
